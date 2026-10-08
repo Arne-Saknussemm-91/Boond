@@ -21,7 +21,7 @@ WEATHER = json.loads((CACHE / "ludhiana_actual_2021_22.json").read_text())
 # crop, sowing date, (Boond irrigations, mm, stress days), (baseline irrigations, mm, stress days)
 LOAM_RESULTS = [
     ("wheat", date(2021, 11, 5), (3, 162.1, 0), (2, 125.0, 14)),
-    ("wheat_late", date(2021, 12, 1), (5, 265.1, 0), (2, 125.0, 30)),
+    ("wheat_late", date(2021, 12, 1), (5, 265.1, 0), (2, 125.0, 31)),
     ("paddy", date(2021, 6, 25), (7, 527.9, 7), (7, 525.0, 8)),
     ("cotton", date(2021, 5, 1), (6, 250.5, 0), (6, 450.0, 8)),
     ("sugarcane", date(2021, 3, 1), (13, 753.8, 0), (20, 1500.0, 8)),

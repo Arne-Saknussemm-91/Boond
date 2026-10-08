@@ -147,6 +147,8 @@ def simulate_season(
     days = []
     seasonal_etc = 0.0
 
+    stress_days = 0
+
     for day in range(1, season_length + 1):
         today = first + day - 1
 
@@ -178,6 +180,9 @@ def simulate_season(
 
         seasonal_etc += row["actual_etc_mm"]
 
+        if row["ks"] < 1.0:
+            stress_days += 1
+            
         days.append({
             "date": daily["date"][today],
             "day": day,
@@ -186,7 +191,7 @@ def simulate_season(
             "irrigation_mm": round(irrigation, 2),
             "rain_mm": daily["rain_mm"][today],
             "depletion_mm": round(row["depletion_mm"], 2),
-            "ks": round(row["ks"], 3),
+            "ks": round(row["ks"], 6),
             "losses_mm": round(row["losses_mm"], 2),
             **({"pond_mm": round(row["pond_mm"], 2)} if paddy else {})
         })
@@ -203,7 +208,7 @@ def simulate_season(
         "gross_pumped_mm": resources["gross_depth_mm"],
         "pump_kwh": round(resources["kwh"], 1),
         "co2_kg": round(resources["co2_kg"], 1),
-        "stress_days": sum(1 for row in days if row["ks"] < 1.0),
+        "stress_days": stress_days,
         "seasonal_etc_mm": round(seasonal_etc, 1),
         "rain_mm": round(sum(row["rain_mm"] for row in days), 1),
         "drainage_mm": round(sum(row["losses_mm"] for row in days), 1)
