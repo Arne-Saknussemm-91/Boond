@@ -1,113 +1,115 @@
+import pytest
+
 from engine.advisor import decide_irrigation
 
 
-def run_test(
-    name,
+@pytest.mark.parametrize(
+    "current_depletion, future_rain, rain_probability, action, crossing_day, reason_code",
+    [
+        # Healthy now, but reaches RAW on day 3: reassess tomorrow.
+        (20.0, [0.0, 0.0, 0.0], 0.0, "WAIT", 3, "CROSSES_RAW_LATER"),
+        # Needs irrigation soon.
+        (30.0, [0.0, 0.0, 0.0], 0.0, "IRRIGATE", 1, "CROSSES_RAW_IN_2D"),
+        # Rain is expected, but RAW is reached tomorrow, before the rain.
+        (30.0, [0.0, 10.0, 0.0], 0.90, "IRRIGATE", 1, "CROSSES_RAW_IN_2D"),
+        # Rain is uncertain, so it is not trusted.
+        (30.0, [0.0, 10.0, 0.0], 0.40, "IRRIGATE", 1, "CROSSES_RAW_IN_2D"),
+        # Rain arrives before the RAW crossing.
+        (25.0, [0.0, 15.0, 0.0], 0.90, "SKIP", 2, "RAINFALL_EXPECTED"),
+        # Rain arrives after the RAW crossing.
+        (30.0, [0.0, 0.0, 15.0], 0.90, "IRRIGATE", 1, "CROSSES_RAW_IN_2D"),
+    ],
+    ids=[
+        "healthy_field",
+        "irrigation_needed",
+        "rain_expected_too_late",
+        "uncertain_rain",
+        "rain_before_raw_crossing",
+        "rain_after_raw_crossing",
+    ],
+)
+def test_decide_irrigation_scenarios(
     current_depletion,
-    raw,
-    future_etc,
     future_rain,
-    rain_probability
+    rain_probability,
+    action,
+    crossing_day,
+    reason_code
 ):
-
     result = decide_irrigation(
         current_depletion=current_depletion,
-        raw=raw,
-        future_etc=future_etc,
+        raw=35.0,
+        future_etc=[5.0, 5.0, 5.0],
         future_rain=future_rain,
         rain_probability=rain_probability
     )
 
-    print()
-    print("=" * 50)
-    print(name)
-    print("=" * 50)
-
-    print(f"Action:        {result['action']}")
-    print(f"Crossing day:  {result['crossing_day']}")
-    print(f"Reason:        {result['reason_code']}")
+    assert result == {
+        "action": action,
+        "crossing_day": crossing_day,
+        "reason_code": reason_code
+    }
 
 
-def main():
-
-    # -----------------------------------------
-    # TEST 1: Healthy field
-    # -----------------------------------------
-
-    run_test(
-        name="TEST 1: HEALTHY FIELD",
-        current_depletion=20.0,
+def test_no_crossing_is_healthy():
+    result = decide_irrigation(
+        current_depletion=10.0,
         raw=35.0,
         future_etc=[5.0, 5.0, 5.0],
         future_rain=[0.0, 0.0, 0.0],
         rain_probability=0.0
     )
 
-    # -----------------------------------------
-    # TEST 2: Needs irrigation soon
-    # -----------------------------------------
+    assert result["action"] == "WAIT"
+    assert result["reason_code"] == "HEALTHY_WATER_BALANCE"
+    assert result["crossing_day"] is None
 
-    run_test(
-        name="TEST 2: IRRIGATION NEEDED",
-        current_depletion=30.0,
-        raw=35.0,
+
+def test_already_past_raw_irrigates_even_with_rain_tomorrow():
+    # Bug 3: the root zone is already stressed today.
+    result = decide_irrigation(
+        current_depletion=60.0,
+        raw=50.0,
         future_etc=[5.0, 5.0, 5.0],
-        future_rain=[0.0, 0.0, 0.0],
-        rain_probability=0.0
-    )
-
-    # -----------------------------------------
-    # TEST 3: Rain is expected
-    # -----------------------------------------
-
-    run_test(
-        name="TEST 3: RAIN EXPECTED",
-        current_depletion=30.0,
-        raw=35.0,
-        future_etc=[5.0, 5.0, 5.0],
-        future_rain=[0.0, 10.0, 0.0],
+        future_rain=[30.0, 0.0, 0.0],
         rain_probability=0.90
     )
 
-    # -----------------------------------------
-    # TEST 4: Rain uncertain
-    # -----------------------------------------
+    assert result["action"] == "IRRIGATE"
+    assert result["reason_code"] == "ALREADY_PAST_RAW"
+    assert result["crossing_day"] == 0
 
-    run_test(
-        name="TEST 4: UNCERTAIN RAIN",
-        current_depletion=30.0,
-        raw=35.0,
-        future_etc=[5.0, 5.0, 5.0],
-        future_rain=[0.0, 10.0, 0.0],
-        rain_probability=0.40
-    )
 
-    # -----------------------------------------
-    # TEST 5: Rain before RAW crossing
-    # -----------------------------------------
-
-    run_test(
-        name="TEST 5: RAIN BEFORE RAW CROSSING",
+def test_per_day_probability_list_is_accepted():
+    result = decide_irrigation(
         current_depletion=25.0,
         raw=35.0,
         future_etc=[5.0, 5.0, 5.0],
         future_rain=[0.0, 15.0, 0.0],
-        rain_probability=0.90
+        rain_probability=[0.1, 0.9, 0.1]
     )
 
-    # -----------------------------------------
-    # TEST 6: Rain after RAW crossing
-    # -----------------------------------------
+    assert result["action"] == "SKIP"
 
-    run_test(
-        name="TEST 6: RAIN AFTER RAW CROSSING",
-        current_depletion=30.0,
+
+def test_missing_probability_is_not_trusted():
+    result = decide_irrigation(
+        current_depletion=25.0,
         raw=35.0,
         future_etc=[5.0, 5.0, 5.0],
-        future_rain=[0.0, 0.0, 15.0],
-        rain_probability=0.90
+        future_rain=[0.0, 15.0, 0.0],
+        rain_probability=None
     )
 
+    assert result["action"] == "IRRIGATE"
 
-if __name__ == "__main__":
-    main()
+
+def test_mismatched_lengths_raise():
+    with pytest.raises(ValueError):
+        decide_irrigation(
+            current_depletion=25.0,
+            raw=35.0,
+            future_etc=[5.0, 5.0, 5.0],
+            future_rain=[0.0, 15.0],
+            rain_probability=0.9
+        )

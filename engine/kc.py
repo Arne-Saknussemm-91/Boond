@@ -1,100 +1,78 @@
-import json
-from pathlib import Path
-
-BASE_DIR = Path(__file__).parent
+from engine.data import get_crop
 
 
-def load_crop_config():
-    with open(BASE_DIR / "crops.json", "r") as file:
-        return json.load(file)
+STAGES = ("initial", "development", "mid", "late")
 
 
-def get_wheat_stage(day_after_sowing):
+def get_stage_boundaries(crop="wheat"):
+    """
+    Return (stage, days_before_stage, stage_length) for each
+    FAO-56 growth stage, in order.
+    """
+    stages = get_crop(crop)["stages"]
+
+    boundaries = []
+    days_before_stage = 0
+
+    for stage in STAGES:
+        stage_length = stages[stage]["days"]
+        boundaries.append((stage, days_before_stage, stage_length))
+        days_before_stage += stage_length
+
+    return boundaries
+
+
+def get_season_length(crop="wheat"):
+    _, days_before_stage, stage_length = get_stage_boundaries(crop)[-1]
+    return days_before_stage + stage_length
+
+
+def get_stage(day_after_sowing, crop="wheat"):
     if day_after_sowing < 1:
         raise ValueError("day_after_sowing must be >= 1")
 
-    crop = load_crop_config()["wheat"]
-
-    phenology = crop["phenology"]
-
-    initial_end = phenology["initial_days"]
-    development_end = initial_end + phenology["development_days"]
-    mid_end = development_end + phenology["mid_days"]
-    total_days = (
-        initial_end
-        + phenology["development_days"]
-        + phenology["mid_days"]
-        + phenology["late_days"]
-    )
-
-    if day_after_sowing <= initial_end:
-        return "initial"
-
-    if day_after_sowing <= development_end:
-        return "development"
-
-    if day_after_sowing <= mid_end:
-        return "mid"
-
-    if day_after_sowing <= total_days:
-        return "late"
+    for stage, days_before_stage, stage_length in get_stage_boundaries(crop):
+        if day_after_sowing <= days_before_stage + stage_length:
+            return stage
 
     return "post_harvest"
+
+
+def get_wheat_stage(day_after_sowing):
+    return get_stage(day_after_sowing, "wheat")
 
 
 def linear_interpolation(start, end, fraction):
     return start + (end - start) * fraction
 
 
-def get_kc(day_after_sowing):
-    crop = load_crop_config()["wheat"]
+def get_kc(day_after_sowing, crop="wheat"):
+    """
+    Daily Kc using FAO-56 Eq. 66 inside each stage:
 
-    phenology = crop["phenology"]
-    kc = crop["kc"]
+        Kc_i = kc_start + [(i - sum(L_prev)) / L_stage] * (kc_end - kc_start)
 
-    stage = get_wheat_stage(day_after_sowing)
+    Day i is counted from 1 at sowing, so the first
+    development day already moves away from Kc ini and
+    the last day of the stage reaches kc_end. Initial and
+    mid stages have kc_start == kc_end, so Kc is constant.
+    """
+    stage = get_stage(day_after_sowing, crop)
 
     if stage == "post_harvest":
         return 0.0
 
-    if stage == "initial":
-        return kc["initial"]
+    for name, days_before_stage, stage_length in get_stage_boundaries(crop):
+        if name == stage:
+            break
 
-    if stage == "mid":
-        return kc["mid"]
+    stage_kc = get_crop(crop)["stages"][stage]
 
-    if stage == "development":
-        stage_length = phenology["development_days"]
+    # The day lies inside this stage, so stage_length >= 1.
+    fraction = (day_after_sowing - days_before_stage) / stage_length
 
-        start_day = phenology["initial_days"] + 1
-        position = day_after_sowing - start_day
-
-        fraction = position / (stage_length - 1)
-
-        return linear_interpolation(
-            kc["initial"],
-            kc["mid"],
-            fraction
-        )
-
-    if stage == "late":
-        stage_length = phenology["late_days"]
-
-        start_day = (
-            phenology["initial_days"]
-            + phenology["development_days"]
-            + phenology["mid_days"]
-            + 1
-        )
-
-        position = day_after_sowing - start_day
-
-        fraction = position / (stage_length - 1)
-
-        return linear_interpolation(
-            kc["mid"],
-            kc["end"],
-            fraction
-        )
-
-    raise ValueError(f"Unknown stage: {stage}")
+    return linear_interpolation(
+        stage_kc["kc_start"],
+        stage_kc["kc_end"],
+        fraction
+    )

@@ -1,3 +1,20 @@
+from engine.data import get_setting
+
+
+def gross_depth_mm(net_depth_mm, application_efficiency=None):
+    """
+    Depth that must be pumped so that net_depth_mm reaches
+    the root zone (config irrigation.application_efficiency).
+    """
+    if application_efficiency is None:
+        application_efficiency = get_setting("irrigation", "application_efficiency")
+
+    if application_efficiency <= 0:
+        raise ValueError("application_efficiency must be greater than 0")
+
+    return net_depth_mm / application_efficiency
+
+
 def irrigation_volume_litres(
     depth_mm,
     area_acres
@@ -5,12 +22,10 @@ def irrigation_volume_litres(
     """
     Convert irrigation depth over an area into litres.
 
-    1 mm over 1 acre ≈ 4046.86 litres.
+    1 mm over 1 acre = 4.0469 m3 (config energy.m3_per_mm_per_acre).
     """
 
-    litres_per_mm_per_acre = 4046.86
-
-    return depth_mm * area_acres * litres_per_mm_per_acre
+    return irrigation_volume_m3(depth_mm, area_acres) * 1000.0
 
 
 def irrigation_volume_m3(
@@ -21,10 +36,7 @@ def irrigation_volume_m3(
     Convert irrigation depth over an area into cubic metres.
     """
 
-    return irrigation_volume_litres(
-        depth_mm,
-        area_acres
-    ) / 1000.0
+    return depth_mm * area_acres * get_setting("energy", "m3_per_mm_per_acre")
 
 
 def pump_energy_kwh(
@@ -41,7 +53,7 @@ def pump_energy_kwh(
     if pump_efficiency <= 0:
         raise ValueError("pump_efficiency must be greater than 0")
 
-    gravity = 9.81
+    gravity = get_setting("energy", "gravity_m_s2")
 
     return (
         volume_m3
@@ -57,6 +69,9 @@ def electricity_cost(
 ):
     """
     Estimate electricity cost.
+
+    With the default tariff this is the cost to the power
+    system, not the farmer's bill (Punjab farm power is free).
     """
 
     return energy_kwh * tariff_inr_per_kwh

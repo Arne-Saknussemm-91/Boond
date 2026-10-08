@@ -1,4 +1,5 @@
-from engine.water_balance import forecast_water_balance
+from engine.data import get_setting
+from engine.water_balance import calculate_ks, effective_rainfall
 
 
 def predict_depletion(current_depletion, daily_etc_values, daily_rain_values):
@@ -58,13 +59,205 @@ def find_raw_crossing_day_from_forecast(forecast_balances):
     return None
 
 
+def normalise_probabilities(rain_probability, days):
+    """
+    Accept one probability for every day, a per-day list
+    (the Open-Meteo format) or None, and return a list
+    with one value per forecast day.
+    """
+    if rain_probability is None or isinstance(rain_probability, (int, float)):
+        return [rain_probability] * days
+
+    probabilities = list(rain_probability)
+
+    if len(probabilities) != days:
+        raise ValueError(
+            "rain_probability must have one value per forecast day"
+        )
+
+    return probabilities
+
+
+def is_confident(probability, threshold):
+    """
+    Rain is trusted only when its probability reaches the
+    threshold. A missing (None) probability is not trusted.
+    """
+    return probability is not None and probability >= threshold
+
+
+def confident_rain_total(future_rain, rain_probability, threshold):
+    probabilities = normalise_probabilities(rain_probability, len(future_rain))
+
+    return sum(
+        rain
+        for rain, probability in zip(future_rain, probabilities)
+        if is_confident(probability, threshold)
+    )
+
+
+def _step_depletion(depletion, potential_etc, rain, taw, p):
+    """
+    One forecast day of the root-zone balance for a single
+    rain scenario. Ks is recomputed from this scenario's own
+    depletion, and depletion stays within [0, TAW].
+    """
+    if taw is None or p is None:
+        ks = 1.0
+    else:
+        ks = calculate_ks(depletion, taw, p)
+
+    depletion = max(0.0, depletion + potential_etc * ks - rain)
+
+    if taw is not None:
+        depletion = min(taw, depletion)
+
+    return depletion
+
+
+def _find_crossings(forecast_balances, future_rain, probabilities, threshold):
+    """
+    Simulate two scenarios over the forecast:
+        1. No rain occurs.
+        2. Only rain at or above the probability threshold occurs,
+           multiplied by config rain.forecast_rain_discount.
+
+    Return the first day each scenario reaches RAW.
+    """
+    discount = get_setting("rain", "forecast_rain_discount")
+
+    depletion_without_rain = forecast_balances[0]["previous_depletion_mm"]
+    depletion_with_trusted_rain = depletion_without_rain
+
+    crossing_without_rain = None
+    crossing_with_trusted_rain = None
+
+    for day, (balance, rainfall, probability) in enumerate(
+        zip(forecast_balances, future_rain, probabilities),
+        start=1
+    ):
+        # Rows from forecast_water_balance() carry potential ETc,
+        # TAW, p and ET0. Simple rows carry only actual_etc_mm.
+        potential_etc = balance.get("potential_etc_mm", balance["actual_etc_mm"])
+        taw = balance.get("taw_mm")
+        p = balance.get("p")
+        et0 = balance.get("et0_mm")
+
+        trusted_rain = rainfall * discount if is_confident(probability, threshold) else 0.0
+
+        if et0 is not None:
+            trusted_rain = effective_rainfall(trusted_rain, et0)
+
+        depletion_without_rain = _step_depletion(
+            depletion_without_rain, potential_etc, 0.0, taw, p
+        )
+        depletion_with_trusted_rain = _step_depletion(
+            depletion_with_trusted_rain, potential_etc, trusted_rain, taw, p
+        )
+
+        raw = balance["raw_mm"]
+
+        if crossing_without_rain is None and depletion_without_rain >= raw:
+            crossing_without_rain = day
+
+        if crossing_with_trusted_rain is None and depletion_with_trusted_rain >= raw:
+            crossing_with_trusted_rain = day
+
+    return crossing_without_rain, crossing_with_trusted_rain
+
+
+def _decide(
+    current_depletion,
+    current_raw,
+    forecast_balances,
+    future_rain,
+    rain_probability,
+    rain_probability_threshold,
+    irrigate_within_days,
+    rain_skip_window_days
+):
+    if rain_probability_threshold is None:
+        rain_probability_threshold = get_setting("rain", "skip_probability_threshold")
+
+    if irrigate_within_days is None:
+        irrigate_within_days = get_setting("advisor", "irrigate_within_days")
+
+    if rain_skip_window_days is None:
+        rain_skip_window_days = get_setting("advisor", "rain_skip_window_days")
+
+    # Safety rule: once the root zone is already past RAW,
+    # the crop is stressed today. Forecast rain cannot undo
+    # that, so never skip or wait.
+    if current_raw is not None and current_depletion >= current_raw:
+        return {
+            "action": "IRRIGATE",
+            "crossing_day": 0,
+            "reason_code": "ALREADY_PAST_RAW"
+        }
+
+    probabilities = normalise_probabilities(rain_probability, len(forecast_balances))
+
+    crossing_without_rain, crossing_with_trusted_rain = _find_crossings(
+        forecast_balances,
+        future_rain,
+        probabilities,
+        rain_probability_threshold
+    )
+
+    # Irrigate if trusted rain does not prevent RAW being
+    # reached within the next irrigate_within_days days.
+    if (
+        crossing_with_trusted_rain is not None
+        and crossing_with_trusted_rain <= irrigate_within_days
+    ):
+        return {
+            "action": "IRRIGATE",
+            "crossing_day": crossing_with_trusted_rain,
+            "reason_code": "CROSSES_RAW_IN_2D"
+        }
+
+    # Skip when irrigation would be needed inside the rain
+    # window without rain, but trusted rain keeps the field
+    # within RAW for the whole window. Later days in a long
+    # forecast are reassessed on following days.
+    if (
+        crossing_without_rain is not None
+        and crossing_without_rain <= rain_skip_window_days
+        and (
+            crossing_with_trusted_rain is None
+            or crossing_with_trusted_rain > rain_skip_window_days
+        )
+    ):
+        return {
+            "action": "SKIP",
+            "crossing_day": crossing_without_rain,
+            "reason_code": "RAINFALL_EXPECTED"
+        }
+
+    # If the threshold is reached later, reassess on the next day.
+    if crossing_with_trusted_rain is not None:
+        return {
+            "action": "WAIT",
+            "crossing_day": crossing_with_trusted_rain,
+            "reason_code": "CROSSES_RAW_LATER"
+        }
+
+    # No crossing: this is a healthy balance, not a reason
+    # to skip irrigation because of rainfall.
+    return {
+        "action": "WAIT",
+        "crossing_day": None,
+        "reason_code": "HEALTHY_WATER_BALANCE"
+    }
+
+
 def decide_irrigation(
     current_depletion,
     raw,
     future_etc,
     future_rain,
     rain_probability,
-    rain_probability_threshold=0.70,
+    rain_probability_threshold=None,
     forecast_balances=None
 ):
     """
@@ -73,8 +266,9 @@ def decide_irrigation(
     If forecast_balances is supplied, it is the preferred
     source for future depletion and RAW crossing.
 
-    The older future_etc calculation is retained for
-    backward compatibility with existing tests.
+    Otherwise the simple future_etc path is used, with one
+    RAW for every day. It is retained for backward
+    compatibility with existing tests.
     """
 
     if forecast_balances is not None:
@@ -82,70 +276,125 @@ def decide_irrigation(
             forecast_balances=forecast_balances,
             future_rain=future_rain,
             rain_probability=rain_probability,
-            rain_probability_threshold=rain_probability_threshold
+            rain_probability_threshold=rain_probability_threshold,
+            current_raw=raw
         )
 
-    # Backward-compatible path.
-    crossing_day = find_raw_crossing_day(
-        current_depletion,
-        raw,
-        future_etc
-    )
+    if len(future_etc) != len(future_rain):
+        raise ValueError("future_etc and future_rain must have equal lengths")
 
-    if crossing_day is None:
+    simple_balances = [
+        {
+            "previous_depletion_mm": current_depletion,
+            "actual_etc_mm": etc,
+            "raw_mm": raw
+        }
+        for etc in future_etc
+    ]
+
+    if not simple_balances:
+        if current_depletion >= raw:
+            return {
+                "action": "IRRIGATE",
+                "crossing_day": 0,
+                "reason_code": "ALREADY_PAST_RAW"
+            }
+
         return {
             "action": "WAIT",
             "crossing_day": None,
-            "reason_code": "HEALTHY_WATER_BALANCE"
+            "reason_code": "NO_FORECAST_DATA"
         }
 
-    if rain_probability >= rain_probability_threshold:
-        predicted_with_rain = predict_depletion(
-            current_depletion,
-            future_etc,
-            future_rain
+    return _decide(
+        current_depletion=current_depletion,
+        current_raw=raw,
+        forecast_balances=simple_balances,
+        future_rain=future_rain,
+        rain_probability=rain_probability,
+        rain_probability_threshold=rain_probability_threshold,
+        irrigate_within_days=None,
+        rain_skip_window_days=None
+    )
+
+
+def decide_irrigation_from_forecast(
+    forecast_balances,
+    future_rain,
+    rain_probability,
+    rain_probability_threshold=None,
+    current_raw=None,
+    irrigate_within_days=None,
+    rain_skip_window_days=None
+):
+    """
+    Decide irrigation using forecast balances and per-day
+    rain probabilities.
+
+    Forecast balances must contain:
+        previous_depletion_mm
+        actual_etc_mm
+        raw_mm
+
+    Rows from forecast_water_balance() also contain
+    potential_etc_mm, taw_mm, p and et0_mm, which are used
+    to recompute Ks for each rain scenario, apply the
+    0.2 * ET0 rule and keep depletion within [0, TAW].
+
+    current_raw is today's RAW. If it is not given, the
+    first forecast day's RAW is used for the safety rule.
+
+    Rain is trusted only when its probability reaches the threshold.
+    """
+
+    if len(forecast_balances) != len(future_rain):
+        raise ValueError(
+            "forecast_balances and future_rain must have equal lengths"
         )
 
-        rain_prevents_crossing = True
-
-        for depletion in predicted_with_rain:
-            if depletion >= raw:
-                rain_prevents_crossing = False
-                break
-
-        if rain_prevents_crossing:
-            return {
-                "action": "SKIP",
-                "crossing_day": crossing_day,
-                "reason_code": "RAINFALL_EXPECTED"
-            }
-
-    if crossing_day <= 2:
+    if not forecast_balances:
         return {
-            "action": "IRRIGATE",
-            "crossing_day": crossing_day,
-            "reason_code": "CROSSES_RAW_IN_2D"
+            "action": "WAIT",
+            "crossing_day": None,
+            "reason_code": "NO_FORECAST_DATA"
         }
 
-    return {
-        "action": "WAIT",
-        "crossing_day": crossing_day,
-        "reason_code": "CROSSES_RAW_LATER"
-    }
+    if current_raw is None:
+        current_raw = forecast_balances[0]["raw_mm"]
+
+    return _decide(
+        current_depletion=forecast_balances[0]["previous_depletion_mm"],
+        current_raw=current_raw,
+        forecast_balances=forecast_balances,
+        future_rain=future_rain,
+        rain_probability=rain_probability,
+        rain_probability_threshold=rain_probability_threshold,
+        irrigate_within_days=irrigate_within_days,
+        rain_skip_window_days=rain_skip_window_days
+    )
 
 
-def calculate_irrigation_depth(current_depletion, maximum_depth):
+def calculate_irrigation_depth(current_depletion, maximum_depth=None, minimum_depth=None):
     """
-    Calculate irrigation depth.
+    Calculate the net irrigation depth.
 
-    Current prototype:
-    refill approximately the current depletion,
-    subject to the configured practical maximum.
+    Refill approximately the current depletion, capped at
+    the practical maximum and rounded up to the smallest depth
+    that can be spread by flood irrigation
+    (config irrigation.minimum_advised_depth_mm).
     """
+    if maximum_depth is None:
+        maximum_depth = get_setting("irrigation", "maximum_depth_mm")
+
+    if minimum_depth is None:
+        minimum_depth = get_setting("irrigation", "minimum_advised_depth_mm")
+
     if current_depletion <= 0:
         return 0.0
 
-    return min(current_depletion, maximum_depth)
+    depth = min(current_depletion, maximum_depth)
+
+    return max(depth, min(minimum_depth, maximum_depth))
 
 
 def make_daily_decision(
@@ -155,8 +404,8 @@ def make_daily_decision(
     future_rain,
     rain_probability,
     heat_result,
-    maximum_depth,
-    rain_probability_threshold=0.70,
+    maximum_depth=None,
+    rain_probability_threshold=None,
     forecast_balances=None
 ):
     """
@@ -164,19 +413,22 @@ def make_daily_decision(
 
     Decision priority:
         1. Heat protection
-        2. Rain-supported skip
-        3. Irrigation required soon
+        2. Irrigation required (including already past RAW)
+        3. Rain-supported skip
         4. Wait
+
+    Heat protection applies only when confident rain in the
+    heat window is below heat.meaningful_rain_mm and the root
+    zone can hold the light depth (depletion >= light_depth_mm).
+    Its depth is the light depth, or the full refill if the
+    field needs water anyway.
     """
 
-    if heat_result["heat_risk"] == "HIGH":
-        if rain_probability < rain_probability_threshold:
-            return {
-                "action": "HEAT_PROTECTION",
-                "depth_mm": min(15.0, maximum_depth),
-                "reason_code": "HEAT_RISK",
-                "crossing_day": None
-            }
+    if maximum_depth is None:
+        maximum_depth = get_setting("irrigation", "maximum_depth_mm")
+
+    if rain_probability_threshold is None:
+        rain_probability_threshold = get_setting("rain", "skip_probability_threshold")
 
     irrigation_result = decide_irrigation(
         current_depletion=current_depletion,
@@ -189,14 +441,52 @@ def make_daily_decision(
     )
 
     if irrigation_result["action"] == "IRRIGATE":
-        depth = calculate_irrigation_depth(
+        refill_depth = calculate_irrigation_depth(
             current_depletion,
             maximum_depth
         )
+    else:
+        refill_depth = 0.0
 
+    if heat_result["heat_risk"] == "HIGH":
+        heat_window_days = get_setting("heat", "forecast_window_days")
+        window_rain = list(future_rain)[:heat_window_days]
+        window_probability = normalise_probabilities(
+            rain_probability,
+            len(future_rain)
+        )[:heat_window_days]
+
+        confident_rain = confident_rain_total(
+            window_rain,
+            window_probability,
+            rain_probability_threshold
+        )
+
+        light_depth = min(
+            get_setting("irrigation", "light_depth_mm"),
+            maximum_depth
+        )
+
+        # Meaningful confident rain will cool the crop, so a
+        # heat irrigation is not needed. Nor is one needed while
+        # the root zone has no room for the light irrigation:
+        # the soil is still wet (e.g. from yesterday's heat
+        # irrigation) and the water would only drain away.
+        if (
+            confident_rain < get_setting("heat", "meaningful_rain_mm")
+            and (current_depletion >= light_depth or refill_depth > 0)
+        ):
+            return {
+                "action": "HEAT_PROTECTION",
+                "depth_mm": max(light_depth, refill_depth),
+                "reason_code": "HEAT_RISK",
+                "crossing_day": irrigation_result["crossing_day"]
+            }
+
+    if irrigation_result["action"] == "IRRIGATE":
         return {
             "action": "IRRIGATE",
-            "depth_mm": depth,
+            "depth_mm": refill_depth,
             "reason_code": irrigation_result["reason_code"],
             "crossing_day": irrigation_result["crossing_day"]
         }
@@ -214,132 +504,4 @@ def make_daily_decision(
         "depth_mm": 0.0,
         "reason_code": irrigation_result["reason_code"],
         "crossing_day": irrigation_result["crossing_day"]
-    }
-
-
-
-def decide_irrigation_from_forecast(
-    forecast_balances,
-    future_rain,
-    rain_probability,
-    rain_probability_threshold=0.70
-):
-    """
-    Decide irrigation using forecast balances and per-day
-    rain probabilities.
-
-    Forecast balances must contain:
-        previous_depletion_mm
-        actual_etc_mm
-        raw_mm
-
-    Rain is trusted only when its probability reaches the threshold.
-    """
-
-    if len(forecast_balances) != len(future_rain):
-        raise ValueError(
-            "forecast_balances and future_rain must have equal lengths"
-        )
-
-    # Support both a single probability and a probability per day.
-    if isinstance(rain_probability, (int, float)):
-        probabilities = [rain_probability] * len(forecast_balances)
-    else:
-        probabilities = list(rain_probability)
-
-    if len(forecast_balances) != len(probabilities):
-        raise ValueError(
-            "forecast_balances and rain_probability must have equal lengths"
-        )
-
-    if not forecast_balances:
-        return {
-            "action": "WAIT",
-            "crossing_day": None,
-            "reason_code": "NO_FORECAST_DATA"
-        }
-
-    # Track two scenarios independently:
-    # 1. No rain occurs.
-    # 2. Only sufficiently reliable forecast rain occurs.
-    depletion_without_rain = forecast_balances[0]["previous_depletion_mm"]
-    depletion_with_trusted_rain = depletion_without_rain
-
-    crossing_without_rain = None
-    crossing_with_trusted_rain = None
-
-    for index, balance in enumerate(forecast_balances):
-        etc = balance["actual_etc_mm"]
-        raw = balance["raw_mm"]
-
-        # The first forecast day starts from today's ending depletion.
-        # Later days carry forward the previous simulated day's result.
-        depletion_without_rain += etc
-        depletion_with_trusted_rain += etc
-
-        probability = probabilities[index]
-        rainfall = future_rain[index]
-
-        if probability >= rain_probability_threshold:
-            depletion_with_trusted_rain -= rainfall
-
-        # This helper works with depletion values, so keep them
-        # within the physically meaningful range of zero or more.
-        depletion_without_rain = max(0.0, depletion_without_rain)
-        depletion_with_trusted_rain = max(0.0, depletion_with_trusted_rain)
-
-        day = index + 1
-
-        if crossing_without_rain is None and depletion_without_rain >= raw:
-            crossing_without_rain = day
-
-        if (
-            crossing_with_trusted_rain is None
-            and depletion_with_trusted_rain >= raw
-        ):
-            crossing_with_trusted_rain = day
-
-    # Irrigate if trusted rain does not prevent RAW being reached
-    # within the next two days.
-    if crossing_with_trusted_rain is not None and crossing_with_trusted_rain <= 2:
-        return {
-            "action": "IRRIGATE",
-            "crossing_day": crossing_with_trusted_rain,
-            "reason_code": "CROSSES_RAW_IN_2D"
-        }
-
-    # Skip only when irrigation would otherwise be needed within
-    # three days, but trusted rain prevents the crossing throughout
-    # the forecast period.
-    trusted_rain_exists = any(
-        rainfall > 0 and probability >= rain_probability_threshold
-        for rainfall, probability in zip(future_rain, probabilities)
-    )
-
-    if (
-        trusted_rain_exists
-        and crossing_without_rain is not None
-        and crossing_without_rain <= 3
-        and crossing_with_trusted_rain is None
-    ):
-        return {
-            "action": "SKIP",
-            "crossing_day": crossing_without_rain,
-            "reason_code": "RAINFALL_EXPECTED"
-        }
-
-    # If the threshold is reached later, reassess on the next day.
-    if crossing_with_trusted_rain is not None:
-        return {
-            "action": "WAIT",
-            "crossing_day": crossing_with_trusted_rain,
-            "reason_code": "CROSSES_RAW_LATER"
-        }
-
-    # No crossing and no reliable rain: this is a healthy balance,
-    # not a reason to skip irrigation because of rainfall.
-    return {
-        "action": "WAIT",
-        "crossing_day": None,
-        "reason_code": "HEALTHY_WATER_BALANCE"
     }

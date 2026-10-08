@@ -1,51 +1,37 @@
-import json
-from pathlib import Path
-
-from engine.kc import get_kc
+from engine.data import get_crop, get_setting, get_soil
+from engine.kc import get_kc, get_stage
 
 
-BASE_DIR = Path(__file__).parent
+# FAO-56 Table 22 note: the adjusted p stays within these limits.
+P_MIN = 0.1
+P_MAX = 0.8
 
 
-def load_json(filename):
-    with open(BASE_DIR / filename, "r") as file:
-        return json.load(file)
-
-
-def get_root_depth(day_after_sowing):
+def get_root_depth(day_after_sowing, crop="wheat"):
     """
-    Calculate root depth for wheat.
+    Calculate root depth.
 
-    Root depth:
-        0.30 m at sowing — model assumption
-        grows linearly to 1.50 m by the end of the crop.
+    Root depth grows linearly from initial_m on day 1
+    to maximum_m on full_depth_day, then stays at maximum_m.
 
-    The 1.50 m maximum is the lower end of the
-    FAO-56 winter-wheat root-depth range and is used
-    here pending local calibration.
+    For wheat, maximum_m is 1.0 m: Punjab wheat is spring
+    wheat (FAO-56 Table 22: 1.0-1.5 m) and the model uses
+    the lower end pending local calibration.
     """
 
-    crop = load_json("crops.json")["wheat"]
+    root_depth = get_crop(crop)["root_depth"]
 
-    initial_depth = crop["root_depth"]["initial_m"]
-    maximum_depth = crop["root_depth"]["model_max_m"]
-
-    phenology = crop["phenology"]
-
-    total_days = (
-        phenology["initial_days"]
-        + phenology["development_days"]
-        + phenology["mid_days"]
-        + phenology["late_days"]
-    )
+    initial_depth = root_depth["initial_m"]
+    maximum_depth = root_depth["maximum_m"]
+    full_depth_day = root_depth["full_depth_day"]
 
     if day_after_sowing <= 1:
         return initial_depth
 
-    if day_after_sowing >= total_days:
+    if day_after_sowing >= full_depth_day:
         return maximum_depth
 
-    growth_fraction = (day_after_sowing - 1) / (total_days - 1)
+    growth_fraction = (day_after_sowing - 1) / (full_depth_day - 1)
 
     return initial_depth + growth_fraction * (
         maximum_depth - initial_depth
@@ -58,37 +44,50 @@ def get_soil_parameters(soil):
     for the selected soil.
     """
 
-    soils = load_json("soils.json")
-
-    if soil not in soils:
-        raise ValueError(
-            f"Unknown soil type: {soil}"
-        )
-
-    return soils[soil]
+    return get_soil(soil)
 
 
 def calculate_taw(soil, root_depth_m):
     params = get_soil_parameters(soil)
 
-    theta_fc = params["theta_fc_default"]
-    theta_wp = params["theta_wp_default"]
+    theta_fc = params["theta_fc"]
+    theta_wp = params["theta_wp"]
 
     return 1000 * (theta_fc - theta_wp) * root_depth_m
 
 
-def calculate_p(etc, p_table=0.55):
+def get_p_table(crop="wheat", day_after_sowing=None):
+    """
+    The crop's depletion fraction (FAO-56 Table 22), or its
+    stage-specific value from depletion_fraction_by_stage.
+    """
+    crop_data = get_crop(crop)
+    by_stage = crop_data.get("depletion_fraction_by_stage") or {}
+
+    if day_after_sowing is not None:
+        stage = get_stage(day_after_sowing, crop)
+
+        if stage in by_stage:
+            return by_stage[stage]
+
+    return crop_data["depletion_fraction"]
+
+
+def calculate_p(etc, p_table=None, crop="wheat", day_after_sowing=None):
     """
     Calculate depletion fraction p.
 
     p = p_table + 0.04 * (5 - ETc)
 
-    The result is limited to [0.1, 0.8].
+    The result is limited to [0.1, 0.8] (FAO-56 Table 22).
     """
+
+    if p_table is None:
+        p_table = get_p_table(crop, day_after_sowing)
 
     p = p_table + 0.04 * (5 - etc)
 
-    return max(0.1, min(0.8, p))
+    return max(P_MIN, min(P_MAX, p))
 
 
 def calculate_raw(taw, p):
@@ -130,26 +129,27 @@ def calculate_actual_etc(etc, ks):
     """
     return ks * etc
 
-def calculate_kc_etc(day_after_sowing, et0):
+def calculate_kc_etc(day_after_sowing, et0, crop="wheat"):
     """
     Calculate Kc and crop evapotranspiration ETc.
     """
 
-    kc = get_kc(day_after_sowing)
+    kc = get_kc(day_after_sowing, crop)
 
     etc = kc * et0
 
     return kc, etc
 
 
-def effective_rainfall(rain, et0):
+def effective_rainfall(rain, et0, threshold_ratio=None):
     """
     Determine the rainfall amount used by the daily
     root-zone water balance.
 
     FAO-56 notes that daily precipitation below about
     0.2 * ET0 can normally be ignored because it is
-    generally evaporated.
+    generally evaporated. The ratio is read from
+    config.json (rain.effective_threshold_ratio).
 
     This is therefore a practical FAO-56 simplification,
     not a universal physical threshold.
@@ -158,7 +158,10 @@ def effective_rainfall(rain, et0):
     if rain < 0:
         raise ValueError("rain cannot be negative")
 
-    threshold = 0.2 * et0
+    if threshold_ratio is None:
+        threshold_ratio = get_setting("rain", "effective_threshold_ratio")
+
+    threshold = threshold_ratio * et0
 
     if rain < threshold:
         return 0.0
@@ -208,7 +211,8 @@ def calculate_daily_balance(
     et0,
     rain,
     irrigation,
-    previous_depletion
+    previous_depletion,
+    crop="wheat"
 ):
     """
     Calculate the complete daily soil-water balance.
@@ -221,11 +225,12 @@ def calculate_daily_balance(
     # Crop calculations
     # -------------------------
 
-    root_depth = get_root_depth(day_after_sowing)
+    root_depth = get_root_depth(day_after_sowing, crop)
 
     kc, potential_etc = calculate_kc_etc(
         day_after_sowing,
-        et0
+        et0,
+        crop
     )
 
     # -------------------------
@@ -237,12 +242,18 @@ def calculate_daily_balance(
         root_depth
     )
 
+    # A carried-over depletion can never exceed
+    # what today's root zone is able to hold.
+    previous_depletion = min(previous_depletion, taw)
+
     # -------------------------
     # Allowable depletion
     # -------------------------
 
     p = calculate_p(
-        potential_etc
+        potential_etc,
+        crop=crop,
+        day_after_sowing=day_after_sowing
     )
 
     raw = calculate_raw(
@@ -288,6 +299,7 @@ def calculate_daily_balance(
 
     return {
         "day_after_sowing": day_after_sowing,
+        "crop": crop,
         "soil": soil,
         "root_depth_m": root_depth,
         "kc": kc,
@@ -311,7 +323,8 @@ def forecast_water_balance(
     soil,
     future_et0,
     future_rain,
-    initial_depletion
+    initial_depletion,
+    crop="wheat"
 ):
     """
     Simulate future soil-water balance day by day.
@@ -352,7 +365,8 @@ def forecast_water_balance(
             et0=et0,
             rain=rain,
             irrigation=0.0,
-            previous_depletion=depletion
+            previous_depletion=depletion,
+            crop=crop
         )
 
         depletion = balance["depletion_mm"]

@@ -8,7 +8,8 @@ def test_forecast_recalculates_daily_water_balance():
         soil="loam",
         future_et0=[5.0, 5.0, 5.0],
         future_rain=[0.0, 0.0, 0.0],
-        initial_depletion=35.75
+        initial_depletion=35.75,
+        crop="wheat_fao56"
     )
 
     assert len(predictions) == 3
