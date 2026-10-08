@@ -1,4 +1,7 @@
-from engine.water_balance import calculate_daily_balance
+from engine.water_balance import (
+    calculate_daily_balance,
+    forecast_water_balance
+)
 from engine.heat_rules import check_heat_risk
 from engine.advisor import make_daily_decision
 from engine.resources import (
@@ -17,7 +20,7 @@ def generate_daily_decision(
     rain,
     irrigation,
     previous_depletion,
-    future_etc,
+    future_et0,
     future_rain,
     rain_probability,
     heat_stage,
@@ -55,6 +58,13 @@ def generate_daily_decision(
         irrigation=irrigation,
         previous_depletion=previous_depletion
     )
+    forecast_balances = forecast_water_balance(
+        start_day_after_sowing=day_after_sowing,
+        soil=soil,
+        future_et0=future_et0,
+        future_rain=future_rain,
+        initial_depletion=balance["depletion_mm"]
+    )
 
     # -------------------------------------------------
     # STEP 2: Calculate heat risk
@@ -72,11 +82,12 @@ def generate_daily_decision(
     decision = make_daily_decision(
         current_depletion=balance["depletion_mm"],
         raw=balance["raw_mm"],
-        future_etc=future_etc,
+        future_etc=[],
         future_rain=future_rain,
         rain_probability=rain_probability,
         heat_result=heat_result,
-        maximum_depth=maximum_irrigation_depth
+        maximum_depth=maximum_irrigation_depth,
+        forecast_balances=forecast_balances
     )
 
     # -------------------------------------------------

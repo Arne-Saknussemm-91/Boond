@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 BASE_DIR = Path(__file__).parent
 
 
@@ -11,33 +10,22 @@ def load_crop_config():
 
 
 def get_wheat_stage(day_after_sowing):
-    """
-    Return the wheat growth stage for a given day.
-
-    day_after_sowing:
-        1 = first day after sowing
-    """
-
     if day_after_sowing < 1:
         raise ValueError("day_after_sowing must be >= 1")
 
     crop = load_crop_config()["wheat"]
 
-    stages = crop["stages"]
+    phenology = crop["phenology"]
 
-    initial_end = stages["initial"]["days"]
-
-    development_end = (
-        initial_end +
-        stages["development"]["days"]
+    initial_end = phenology["initial_days"]
+    development_end = initial_end + phenology["development_days"]
+    mid_end = development_end + phenology["mid_days"]
+    total_days = (
+        initial_end
+        + phenology["development_days"]
+        + phenology["mid_days"]
+        + phenology["late_days"]
     )
-
-    mid_end = (
-        development_end +
-        stages["mid"]["days"]
-    )
-
-    total_days = crop["total_days"]
 
     if day_after_sowing <= initial_end:
         return "initial"
@@ -59,12 +47,10 @@ def linear_interpolation(start, end, fraction):
 
 
 def get_kc(day_after_sowing):
-    """
-    Calculate crop coefficient Kc for wheat.
-    """
-
     crop = load_crop_config()["wheat"]
-    stages = crop["stages"]
+
+    phenology = crop["phenology"]
+    kc = crop["kc"]
 
     stage = get_wheat_stage(day_after_sowing)
 
@@ -72,44 +58,42 @@ def get_kc(day_after_sowing):
         return 0.0
 
     if stage == "initial":
-        return stages["initial"]["kc_start"]
+        return kc["initial"]
 
     if stage == "mid":
-        return stages["mid"]["kc_start"]
+        return kc["mid"]
 
     if stage == "development":
+        stage_length = phenology["development_days"]
 
-        start_day = stages["initial"]["days"] + 1
-        stage_length = stages["development"]["days"]
-
+        start_day = phenology["initial_days"] + 1
         position = day_after_sowing - start_day
 
         fraction = position / (stage_length - 1)
 
         return linear_interpolation(
-            stages["development"]["kc_start"],
-            stages["development"]["kc_end"],
+            kc["initial"],
+            kc["mid"],
             fraction
         )
 
     if stage == "late":
+        stage_length = phenology["late_days"]
 
         start_day = (
-            stages["initial"]["days"]
-            + stages["development"]["days"]
-            + stages["mid"]["days"]
+            phenology["initial_days"]
+            + phenology["development_days"]
+            + phenology["mid_days"]
             + 1
         )
-
-        stage_length = stages["late"]["days"]
 
         position = day_after_sowing - start_day
 
         fraction = position / (stage_length - 1)
 
         return linear_interpolation(
-            stages["late"]["kc_start"],
-            stages["late"]["kc_end"],
+            kc["mid"],
+            kc["end"],
             fraction
         )
 

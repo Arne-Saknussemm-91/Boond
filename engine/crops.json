@@ -1,40 +1,37 @@
 {
   "wheat": {
-    "total_days": 120,
 
-    "stages": {
-      "initial": {
-        "days": 15,
-        "kc_start": 0.30,
-        "kc_end": 0.30
-      },
-      "development": {
-        "days": 25,
-        "kc_start": 0.30,
-        "kc_end": 1.15
-      },
-      "mid": {
-        "days": 50,
-        "kc_start": 1.15,
-        "kc_end": 1.15
-      },
-      "late": {
-        "days": 30,
-        "kc_start": 1.15,
-        "kc_end": 0.40
-      }
+    "phenology": {
+      "baseline_source": "FAO56",
+      "initial_days": 15,
+      "development_days": 25,
+      "mid_days": 50,
+      "late_days": 30
     },
 
-    "heat_thresholds": {
-      "flowering": 31.0,
-      "grain_filling": 35.0
+    "kc": {
+      "initial": 0.30,
+      "mid": 1.15,
+      "end": 0.40
     },
 
-    "depletion_fraction": 0.55,
+    "water_stress": {
+      "p_table": 0.55,
+      "p_adjustment_formula": "p = p_table + 0.04 * (5 - ETc)",
+      "p_min": 0.10,
+      "p_max": 0.80
+    },
 
     "root_depth": {
       "initial_m": 0.30,
-      "maximum_m": 1.00
+      "fa056_winter_wheat_range_m": [1.5, 1.8],
+      "model_max_m": 1.5,
+      "model_note": "Initial root depth is a model assumption; maximum uses lower end of FAO-56 winter-wheat range pending local calibration"
+    },
+
+    "heat": {
+      "flowering_threshold_c": 31.0,
+      "grain_filling_threshold_c": 35.0
     }
   }
 }

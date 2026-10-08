@@ -73,7 +73,7 @@ def main():
     # Update depletion
     # -------------------------
 
-    depletion = update_depletion(
+    depletion, deep_percolation = update_depletion(
         previous_depletion,
         effective_rain,
         irrigation,
@@ -101,6 +101,7 @@ def main():
     print(f"Effective rain:      {effective_rain:.2f} mm")
     print(f"Irrigation:          {irrigation:.2f} mm")
     print(f"New depletion:       {depletion:.2f} mm")
+    print(f"Deep percolation:    {deep_percolation:.2f} mm")
 
 
 if __name__ == "__main__":

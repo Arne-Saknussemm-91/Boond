@@ -3,20 +3,16 @@
     "effective_threshold_ratio": 0.2,
     "skip_probability_threshold": 0.7
   },
-
   "irrigation": {
     "light_depth_mm": 15,
     "maximum_depth_mm": 60
   },
-
   "heat": {
     "forecast_window_days": 3
   },
-
   "energy": {
     "default_pump_efficiency": 0.40
   },
-
   "cost": {
     "electricity_tariff_inr_per_kwh": 8.0
   }

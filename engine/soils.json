@@ -1,16 +1,41 @@
 {
-  "sandy": {
-    "theta_fc": 0.15,
-    "theta_wp": 0.06
+  "sand": {
+    "theta_fc_range": [0.07, 0.17],
+    "theta_wp_range": [0.02, 0.07],
+    "theta_fc_default": 0.12,
+    "theta_wp_default": 0.045,
+    "source": "FAO-56 Table 19"
+  },
+
+  "sandy_loam": {
+    "theta_fc_range": [0.18, 0.28],
+    "theta_wp_range": [0.06, 0.16],
+    "theta_fc_default": 0.23,
+    "theta_wp_default": 0.11,
+    "source": "FAO-56 Table 19"
   },
 
   "loam": {
-    "theta_fc": 0.25,
-    "theta_wp": 0.12
+    "theta_fc_range": [0.20, 0.30],
+    "theta_wp_range": [0.07, 0.17],
+    "theta_fc_default": 0.25,
+    "theta_wp_default": 0.12,
+    "source": "FAO-56 Table 19"
+  },
+
+  "silt_loam": {
+    "theta_fc_range": [0.22, 0.36],
+    "theta_wp_range": [0.09, 0.21],
+    "theta_fc_default": 0.29,
+    "theta_wp_default": 0.15,
+    "source": "FAO-56 Table 19"
   },
 
   "clay": {
-    "theta_fc": 0.35,
-    "theta_wp": 0.23
+    "theta_fc_range": [0.32, 0.40],
+    "theta_wp_range": [0.20, 0.24],
+    "theta_fc_default": 0.36,
+    "theta_wp_default": 0.22,
+    "source": "FAO-56 Table 19"
   }
 }

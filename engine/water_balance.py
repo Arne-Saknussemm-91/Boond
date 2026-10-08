@@ -17,15 +17,27 @@ def get_root_depth(day_after_sowing):
     Calculate root depth for wheat.
 
     Root depth:
-        0.30 m at sowing
-        grows linearly to 1.00 m by the end of the crop
+        0.30 m at sowing — model assumption
+        grows linearly to 1.50 m by the end of the crop.
+
+    The 1.50 m maximum is the lower end of the
+    FAO-56 winter-wheat root-depth range and is used
+    here pending local calibration.
     """
 
     crop = load_json("crops.json")["wheat"]
 
     initial_depth = crop["root_depth"]["initial_m"]
-    maximum_depth = crop["root_depth"]["maximum_m"]
-    total_days = crop["total_days"]
+    maximum_depth = crop["root_depth"]["model_max_m"]
+
+    phenology = crop["phenology"]
+
+    total_days = (
+        phenology["initial_days"]
+        + phenology["development_days"]
+        + phenology["mid_days"]
+        + phenology["late_days"]
+    )
 
     if day_after_sowing <= 1:
         return initial_depth
@@ -33,11 +45,11 @@ def get_root_depth(day_after_sowing):
     if day_after_sowing >= total_days:
         return maximum_depth
 
-    fraction = (day_after_sowing - 1) / (total_days - 1)
+    growth_fraction = (day_after_sowing - 1) / (total_days - 1)
 
-    return initial_depth + (
+    return initial_depth + growth_fraction * (
         maximum_depth - initial_depth
-    ) * fraction
+    )
 
 
 def get_soil_parameters(soil):
@@ -57,20 +69,12 @@ def get_soil_parameters(soil):
 
 
 def calculate_taw(soil, root_depth_m):
-    """
-    Calculate Total Available Water (TAW) in mm.
-
-    TAW = 1000 * (theta_FC - theta_WP) * Zr
-    """
-
     params = get_soil_parameters(soil)
 
-    theta_fc = params["theta_fc"]
-    theta_wp = params["theta_wp"]
+    theta_fc = params["theta_fc_default"]
+    theta_wp = params["theta_wp_default"]
 
-    return 1000 * (
-        theta_fc - theta_wp
-    ) * root_depth_m
+    return 1000 * (theta_fc - theta_wp) * root_depth_m
 
 
 def calculate_p(etc, p_table=0.55):
@@ -140,9 +144,19 @@ def calculate_kc_etc(day_after_sowing, et0):
 
 def effective_rainfall(rain, et0):
     """
-    Rain below 0.2 * ET0 does not count as effective
-    rainfall according to the specification.
+    Determine the rainfall amount used by the daily
+    root-zone water balance.
+
+    FAO-56 notes that daily precipitation below about
+    0.2 * ET0 can normally be ignored because it is
+    generally evaporated.
+
+    This is therefore a practical FAO-56 simplification,
+    not a universal physical threshold.
     """
+
+    if rain < 0:
+        raise ValueError("rain cannot be negative")
 
     threshold = 0.2 * et0
 
@@ -164,16 +178,29 @@ def update_depletion(
 
     D(i) = D(i-1) - P_eff - I + actual_ETc
 
-    Result is clamped between 0 and TAW.
+    Depletion is constrained to [0, TAW].
+
+    If the incoming water exceeds the amount that
+    can be stored in the root zone, the excess is
+    treated as deep percolation.
     """
-    depletion = (
+
+    raw_depletion = (
         previous_depletion
         - effective_rain
         - irrigation
         + actual_etc
     )
 
-    return max(0.0, min(taw, depletion))
+    if raw_depletion < 0:
+        deep_percolation = -raw_depletion
+        depletion = 0.0
+
+    else:
+        deep_percolation = 0.0
+        depletion = min(taw, raw_depletion)
+
+    return depletion, deep_percolation
 
 def calculate_daily_balance(
     day_after_sowing,
@@ -251,7 +278,7 @@ def calculate_daily_balance(
     # New depletion
     # -------------------------
 
-    new_depletion = update_depletion(
+    new_depletion, deep_percolation = update_depletion(
         previous_depletion,
         effective_rain,
         irrigation,
@@ -275,5 +302,61 @@ def calculate_daily_balance(
         "rain_mm": rain,
         "effective_rain_mm": effective_rain,
         "irrigation_mm": irrigation,
-        "depletion_mm": new_depletion
+        "depletion_mm": new_depletion,
+        "deep_percolation_mm": deep_percolation
     }
+
+def forecast_water_balance(
+    start_day_after_sowing,
+    soil,
+    future_et0,
+    future_rain,
+    initial_depletion
+):
+    """
+    Simulate future soil-water balance day by day.
+
+    The initial_depletion is the depletion at the end of today.
+    future_et0[0] and future_rain[0] represent tomorrow.
+
+    Each forecast day independently recalculates:
+        - root depth
+        - Kc
+        - potential ETc
+        - TAW
+        - p
+        - RAW
+        - Ks
+        - actual ETc
+        - effective rainfall
+        - new depletion
+
+    No irrigation is assumed during the forecast.
+    This represents the conservative "what happens if we
+    do not irrigate?" scenario used to detect RAW crossing.
+    """
+
+    if len(future_et0) != len(future_rain):
+        raise ValueError("future_et0 and future_rain must have equal lengths")
+
+    depletion = initial_depletion
+    predictions = []
+
+    for index, (et0, rain) in enumerate(zip(future_et0, future_rain), start=1):
+
+        day = start_day_after_sowing + index
+
+        balance = calculate_daily_balance(
+            day_after_sowing=day,
+            soil=soil,
+            et0=et0,
+            rain=rain,
+            irrigation=0.0,
+            previous_depletion=depletion
+        )
+
+        depletion = balance["depletion_mm"]
+
+        predictions.append(balance)
+
+    return predictions
