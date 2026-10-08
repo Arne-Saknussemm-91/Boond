@@ -81,9 +81,19 @@ def generate_daily_decision(
     """
     Generate one complete daily irrigation decision.
 
-    et0 and rain are today's values. future_et0, future_rain,
-    forecast_tmax and a per-day rain_probability list start
-    tomorrow (day_after_sowing + 1).
+    et0 and rain are the values for day_after_sowing. future_et0,
+    future_rain, forecast_tmax and a per-day rain_probability list
+    start on the next day (day_after_sowing + 1).
+
+    In the 06:00 daily job, call it for YESTERDAY:
+        day_after_sowing = (yesterday - sowing_date).days + 1
+        et0, rain        = yesterday's observed values (forecast API past_days)
+        irrigation       = yesterday's WATERED check-ins (mm)
+        future_*         = the forecast starting TODAY
+    The returned action is then today's advice. This matches
+    engine/simulate.py, which decides each morning from yesterday's
+    ending depletion. Passing today's forecast as et0/rain instead
+    would shift every decision by a day.
 
     The growth stage and heat window are derived from the
     crop day. Settings left as None come from config.json.

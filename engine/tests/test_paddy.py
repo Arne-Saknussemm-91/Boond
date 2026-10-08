@@ -75,11 +75,18 @@ def test_irrigation_depth_is_capped_at_10_cm():
 
 
 def test_confident_rain_skips_paddy_irrigation():
-    result = decide_paddy(30, state(dry_days=2), [0, 80, 0], [0.1, 0.9, 0.1], LOW_HEAT)
+    result = decide_paddy(30, state(dry_days=2), [80, 0, 0], [0.9, 0.1, 0.1], LOW_HEAT)
 
     assert result["action"] == "SKIP"
 
-    result = decide_paddy(30, state(dry_days=2), [0, 80, 0], [0.1, 0.4, 0.1], LOW_HEAT)
+    result = decide_paddy(30, state(dry_days=2), [80, 0, 0], [0.4, 0.1, 0.1], LOW_HEAT)
+
+    assert result["action"] == "IRRIGATE"
+
+
+def test_paddy_does_not_wait_for_rain_after_tomorrow():
+    # PAU allows 2 dry days; rain on day 2-3 of the forecast must not delay irrigation.
+    result = decide_paddy(30, state(dry_days=2), [0, 80, 80], [0.1, 0.9, 0.9], LOW_HEAT)
 
     assert result["action"] == "IRRIGATE"
 

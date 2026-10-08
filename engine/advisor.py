@@ -422,6 +422,10 @@ def make_daily_decision(
     zone can hold the light depth (depletion >= light_depth_mm).
     Its depth is the light depth, or the full refill if the
     field needs water anyway.
+
+    If heat risk is HIGH but no heat irrigation is advised, a WAIT
+    keeps a heat reason (HEAT_RISK_SOIL_MOIST or
+    HEAT_RISK_RAIN_EXPECTED) so the farmer is still warned.
     """
 
     if maximum_depth is None:
@@ -448,6 +452,8 @@ def make_daily_decision(
     else:
         refill_depth = 0.0
 
+    heat_wait_reason = None
+
     if heat_result["heat_risk"] == "HIGH":
         heat_window_days = get_setting("heat", "forecast_window_days")
         window_rain = list(future_rain)[:heat_window_days]
@@ -472,16 +478,19 @@ def make_daily_decision(
         # the root zone has no room for the light irrigation:
         # the soil is still wet (e.g. from yesterday's heat
         # irrigation) and the water would only drain away.
-        if (
-            confident_rain < get_setting("heat", "meaningful_rain_mm")
-            and (current_depletion >= light_depth or refill_depth > 0)
-        ):
+        rain_coming = confident_rain >= get_setting("heat", "meaningful_rain_mm")
+
+        if not rain_coming and (current_depletion >= light_depth or refill_depth > 0):
             return {
                 "action": "HEAT_PROTECTION",
                 "depth_mm": max(light_depth, refill_depth),
                 "reason_code": "HEAT_RISK",
                 "crossing_day": irrigation_result["crossing_day"]
             }
+
+        heat_wait_reason = (
+            "HEAT_RISK_RAIN_EXPECTED" if rain_coming else "HEAT_RISK_SOIL_MOIST"
+        )
 
     if irrigation_result["action"] == "IRRIGATE":
         return {
@@ -502,6 +511,6 @@ def make_daily_decision(
     return {
         "action": "WAIT",
         "depth_mm": 0.0,
-        "reason_code": irrigation_result["reason_code"],
+        "reason_code": heat_wait_reason or irrigation_result["reason_code"],
         "crossing_day": irrigation_result["crossing_day"]
     }

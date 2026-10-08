@@ -60,14 +60,54 @@ def test_wheat_replay_follows_the_pau_calendar():
     assert result["baseline"]["irrigation_mm"] == 50 + 3 * 75
 
 
-def test_wheat_baseline_rain_delay_rule():
-    rain = [0.0] * 160
-    rain[9] = 20.0  # 2 cm on day 10 (19 Nov): 10 days later.
-
+def baseline_irrigation_days(rain):
     result = replay(make_weather(160, rain=rain), "wheat", date(2021, 11, 10), "loam")
-    first = next(row["day"] for row in result["baseline_days"] if row["irrigation_mm"] > 0)
+    return [row["day"] for row in result["baseline_days"] if row["irrigation_mm"] > 0]
 
-    assert first == 38
+
+def test_wheat_baseline_rain_delay_rule():
+    # Sown 10 Nov: first irrigation at 4 weeks (day 28), second
+    # 5.5 weeks later (day 66.5 -> 67) without rain.
+    assert baseline_irrigation_days([0.0] * 160)[:2] == [28, 67]
+
+    # 2 cm on day 40 (19 Dec, before 31 Jan): next interval +10 days.
+    rain = [0.0] * 160
+    rain[39] = 20.0
+    assert baseline_irrigation_days(rain)[:2] == [28, 77]
+
+
+def test_rain_before_first_wheat_irrigation_does_not_move_it():
+    # PAU states the rain rule for intervals between irrigations.
+    rain = [0.0] * 160
+    rain[9] = 20.0
+    assert baseline_irrigation_days(rain)[0] == 28
+
+
+def test_replay_does_not_trust_rain_by_default():
+    rain = [0.0] * 160
+    for day in range(30, 150, 12):
+        rain[day] = 30.0
+    weather = make_weather(160, rain=rain)
+
+    cautious = replay(weather, "wheat", date(2021, 11, 10), "loam")
+    perfect = replay(weather, "wheat", date(2021, 11, 10), "loam", rain_probability=1.0)
+
+    assert cautious["boond_rain_probability"] is None
+    assert all(row["action"] != "SKIP" for row in cautious["boond_days"])
+    assert perfect["boond"]["irrigation_mm"] <= cautious["boond"]["irrigation_mm"]
+
+
+def test_replay_uses_separate_forecast_file():
+    weather = make_weather(160)                      # no rain actually fell
+    forecast = make_weather(160, rain=[25.0] * 160)  # but rain was forecast
+    forecast["daily"]["rain_prob"] = [0.9] * 160
+    forecast["source"] = "test forecast"
+
+    result = replay(weather, "wheat", date(2021, 11, 10), "loam", forecast=forecast)
+
+    assert result["boond_forecast"] == "test forecast"
+    assert any(row["action"] == "SKIP" for row in result["boond_days"])
+    assert all(row["rain_mm"] == 0.0 for row in result["boond_days"])
 
 
 def test_paddy_replay_runs_the_pond_model():

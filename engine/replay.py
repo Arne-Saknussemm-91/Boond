@@ -60,8 +60,9 @@ def wheat_baseline(sow_date):
     """
     PAU Rabi 2025-26 p.17: first irrigation at 3 weeks (October
     sowing) or 4 weeks, later irrigations after the listed weeks,
-    and for each cm of rain the next irrigation moves 5 days later
-    until 31 January and 2 days later after that.
+    and for each cm of rain the next interval is extended by 5 days
+    until 31 January and 2 days after that. PAU states the rain
+    rule for intervals, so it starts after the first irrigation.
     """
     plan = load_json("baseline.json")["wheat"]
     first = plan["first_irrigation"]
@@ -89,7 +90,7 @@ def wheat_baseline(sow_date):
     }
 
     def decide(context):
-        if context["day"] > 1:
+        if context["day"] > 1 and state["count"] > 0:
             rain_date = context["date"] - timedelta(days=1)
             days_per_cm = (
                 rain_rule["delay_days_per_cm_rain_until_jan_31"]
@@ -102,10 +103,6 @@ def wheat_baseline(sow_date):
             return _action(0, "BASELINE_WAIT")
 
         count = state["count"]
-
-        if count > len(weeks):
-            return _action(0, "BASELINE_DONE")
-
         depth = first["depth_mm"] if count == 0 else plan["later_depth_mm"]
         state["next_due"] = (
             context["day"] + weeks[count] * 7 if count < len(weeks) else math.inf
@@ -137,7 +134,7 @@ def interval_baseline(sow_date, crop_key):
 
         return plan["interval_days_by_month"][f"{on_date.month:02d}"]
 
-    state = {"next_due": plan["first_irrigation_day"], "irrigated": False}
+    state = {"next_due": plan["first_irrigation_day"]}
 
     def decide(context):
         if _yesterday_rain(context) >= plan["rain_reset_mm"]:
@@ -198,10 +195,15 @@ def baseline_policy(crop, sow_date):
     return interval_baseline(sow_date, key)
 
 
-def replay(weather, crop, sow_date, soil, rain_probability=1.0):
+def replay(weather, crop, sow_date, soil, rain_probability=None, forecast=None):
+    """
+    rain_probability=None: forecast rain is not trusted unless the
+    forecast file carries rain_prob. 1.0 = perfect rain forecast
+    (sensitivity run only; label it).
+    """
     boond = simulate_season(
         weather, sow_date, soil, crop=crop,
-        policy=boond_policy(rain_probability)
+        policy=boond_policy(rain_probability, forecast=forecast)
     )
     baseline = simulate_season(
         weather, sow_date, soil, crop=crop,
@@ -217,6 +219,10 @@ def replay(weather, crop, sow_date, soil, rain_probability=1.0):
         "label": "SIMULATION: same weather through Boond and the published baseline",
         "baseline_source": load_json("baseline.json")[BASELINE_KEYS[crop]]["source"],
         "boond_rain_probability": rain_probability,
+        "boond_forecast": (
+            forecast.get("source", "forecast file") if forecast
+            else "actual weather used as forecast (perfect foresight)"
+        ),
         "boond": boond["summary"],
         "baseline": baseline["summary"],
         "boond_minus_baseline": comparison,
@@ -231,21 +237,32 @@ def main():
     parser.add_argument("--crop", default="wheat")
     parser.add_argument("--sow", required=True, type=date.fromisoformat)
     parser.add_argument("--soil", default="loam")
-    parser.add_argument("--rain-probability", type=float, default=1.0)
+    parser.add_argument("--rain-probability", type=float, default=None,
+                        help="trust forecast rain at this probability (default: not trusted)")
+    parser.add_argument("--forecast", help="archived forecast file (historical-forecast)")
     parser.add_argument("--out-dir", default="replay/out")
     args = parser.parse_args()
 
     with open(args.weather, "r") as file:
         weather = json.load(file)
 
-    result = replay(weather, args.crop, args.sow, args.soil, args.rain_probability)
+    forecast = None
+
+    if args.forecast:
+        with open(args.forecast, "r") as file:
+            forecast = json.load(file)
+
+    result = replay(weather, args.crop, args.sow, args.soil, args.rain_probability, forecast)
 
     out = Path(args.out_dir) / f"replay_{args.crop}_{args.soil}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2))
 
     print(json.dumps(
-        {key: result[key] for key in ("boond", "baseline", "boond_minus_baseline")},
+        {key: result[key] for key in (
+            "boond_rain_probability", "boond_forecast",
+            "boond", "baseline", "boond_minus_baseline"
+        )},
         indent=2
     ))
     print(f"Saved {out}")

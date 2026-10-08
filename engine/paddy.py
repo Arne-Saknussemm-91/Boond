@@ -120,7 +120,10 @@ def decide_paddy(
           soil depletion;
         - stop after stop_irrigation_day.
     Confident forecast rain at least as large as the need gives
-    SKIP. Heat protection keeps 5 cm of standing water.
+    SKIP, but only rain inside advisor.paddy_rain_skip_window_days
+    (1 = the first forecast day): PAU allows only 2 dry days, so
+    waiting longer for rain would stress the crop.
+    Heat protection keeps 5 cm of standing water.
     """
     water = paddy_water(crop)
 
@@ -152,7 +155,7 @@ def decide_paddy(
     if heat_result["heat_risk"] == "HIGH" and pond < HEAT_POND_MM:
         heat_need = HEAT_POND_MM - pond + depletion
 
-    window = get_setting("advisor", "rain_skip_window_days")
+    window = get_setting("advisor", "paddy_rain_skip_window_days")
     threshold = get_setting("rain", "skip_probability_threshold")
     probabilities = normalise_probabilities(rain_probability, len(future_rain))
 

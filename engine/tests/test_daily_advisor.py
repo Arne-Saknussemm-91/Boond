@@ -209,3 +209,48 @@ def test_no_heat_irrigation_while_the_soil_is_still_wet():
     )
 
     assert result["action"] == "WAIT"
+
+
+def test_heat_on_moist_soil_waits_but_keeps_heat_reason():
+    # Soil too wet for a 40 mm heat irrigation: no water, but the farmer is warned.
+    result = make_daily_decision(
+        current_depletion=10,
+        raw=60,
+        future_etc=[4, 4, 4],
+        future_rain=[0, 0, 0],
+        rain_probability=0.1,
+        heat_result={"heat_risk": "HIGH"},
+        maximum_depth=75
+    )
+
+    assert result["action"] == "WAIT"
+    assert result["reason_code"] == "HEAT_RISK_SOIL_MOIST"
+
+
+def test_heat_with_meaningful_rain_waits_with_heat_reason():
+    result = make_daily_decision(
+        current_depletion=10,
+        raw=60,
+        future_etc=[4, 4, 4],
+        future_rain=[0, 20, 0],
+        rain_probability=[0.1, 0.9, 0.1],
+        heat_result={"heat_risk": "HIGH"},
+        maximum_depth=75
+    )
+
+    assert result["action"] == "WAIT"
+    assert result["reason_code"] == "HEAT_RISK_RAIN_EXPECTED"
+
+
+def test_no_heat_keeps_normal_reason():
+    result = make_daily_decision(
+        current_depletion=10,
+        raw=60,
+        future_etc=[4, 4, 4],
+        future_rain=[0, 0, 0],
+        rain_probability=0.1,
+        heat_result={"heat_risk": "LOW"},
+        maximum_depth=75
+    )
+
+    assert result["reason_code"] == "HEALTHY_WATER_BALANCE"

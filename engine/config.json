@@ -44,7 +44,9 @@
     "irrigate_within_days": 2,
     "_why_irrigate_within_days": "Spec: IRRIGATE when depletion reaches RAW within the next 2 days, even after counting confident rain.",
     "rain_skip_window_days": 3,
-    "_why_rain_skip_window_days": "Spec: SKIP only when the field would reach RAW within 3 days without rain and confident rain keeps it below RAW for those 3 days. Later days of a 16-day forecast are reassessed on later days."
+    "_why_rain_skip_window_days": "Spec: SKIP only when the field would reach RAW within 3 days without rain and confident rain keeps it below RAW for those 3 days. Later days of a 16-day forecast are reassessed on later days.",
+    "paddy_rain_skip_window_days": 1,
+    "_why_paddy_rain_skip_window_days": "Paddy: only confident rain on the first forecast day can replace an irrigation that PAU's rule makes due (irrigate 2 days after the pond has gone)."
   },
 
   "kc_climate_adjustment": {

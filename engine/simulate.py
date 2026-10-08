@@ -5,13 +5,22 @@ daily weather.
     python -m engine.simulate --weather weather.json --sow 2021-11-10 --soil loam --crop wheat
 
 Each morning the policy decides from yesterday's ending state.
-The Boond policy uses the next forecast_days of weather as its
-forecast (perfect foresight, with rain_probability for every day).
 Any irrigation is applied that day, then the day's balance is
 computed with the actual weather.
 
-The weather file is the JSON written by tools/fetch_weather.py:
-    {"daily": {"date": [...], "et0_mm": [...], "rain_mm": [...], "tmax_c": [...]}}
+Forecast seen by the Boond policy:
+  * with --forecast FILE: the archived forecast in FILE (from
+    tools/fetch_weather.py --source historical-forecast), using its
+    own rain_prob values when present;
+  * otherwise the next forecast_days of the actual weather
+    (perfect foresight). Rain then counts for SKIP only if you pass
+    --rain-probability; by default (None) forecast rain is NOT
+    trusted, so savings are not overstated. Always report the
+    setting used.
+
+Weather files are the JSON written by tools/fetch_weather.py:
+    {"daily": {"date": [...], "et0_mm": [...], "rain_mm": [...],
+               "tmax_c": [...], "rain_prob": [...] (optional, 0-1)}}
 """
 
 import argparse
@@ -48,27 +57,59 @@ def starting_depletion(soil, et0, crop="wheat"):
     return calculate_raw(taw, p)
 
 
-def boond_policy(rain_probability=1.0, forecast_days=3):
+def _forecast_window(context, forecast_days, forecast, rain_probability):
+    """
+    Return (et0, rain, tmax, probability) lists for the forecast that
+    starts today. From the archived forecast file when given (matched
+    by date), otherwise from the actual weather.
+    """
+    if forecast is None:
+        daily = context["weather"]
+        start = context["index"]
+    else:
+        daily = forecast["daily"]
+        today = context["date"].isoformat()
+
+        if today not in daily["date"]:
+            raise ValueError(f"Forecast file has no row for {today}")
+
+        start = daily["date"].index(today)
+
+    window = slice(start, min(start + forecast_days, len(daily["date"])))
+    et0 = daily["et0_mm"][window]
+
+    if rain_probability is None and "rain_prob" in daily:
+        probability = daily["rain_prob"][window]
+    else:
+        probability = [rain_probability] * len(et0)
+
+    return et0, daily["rain_mm"][window], daily["tmax_c"][window], probability
+
+
+def boond_policy(rain_probability=None, forecast_days=3, forecast=None):
     """
     The Boond advisor as a simulation policy.
+
+    rain_probability=None means forecast rain is not trusted (unless
+    the forecast file carries its own rain_prob). Pass 1.0 only for
+    a labelled "perfect rain forecast" sensitivity run.
     """
 
     def decide(context):
-        daily = context["weather"]
-        today = context["index"]
         day = context["day"]
         crop = context["crop"]
-        window = slice(today, min(today + forecast_days, len(daily["date"])))
 
-        future_rain = daily["rain_mm"][window]
-        heat_result = assess_heat_risk(day, daily["tmax_c"][window], crop)
+        future_et0, future_rain, future_tmax, probability = _forecast_window(
+            context, forecast_days, forecast, rain_probability
+        )
+        heat_result = assess_heat_risk(day, future_tmax, crop)
 
         if context["paddy"]:
             return decide_paddy(
                 day=day,
                 state=context["state"],
                 future_rain=future_rain,
-                rain_probability=rain_probability,
+                rain_probability=probability,
                 heat_result=heat_result,
                 crop=crop
             )
@@ -76,7 +117,7 @@ def boond_policy(rain_probability=1.0, forecast_days=3):
         forecast_balances = forecast_water_balance(
             start_day_after_sowing=day - 1,
             soil=context["soil"],
-            future_et0=daily["et0_mm"][window],
+            future_et0=future_et0,
             future_rain=future_rain,
             initial_depletion=context["state"],
             crop=crop
@@ -87,7 +128,7 @@ def boond_policy(rain_probability=1.0, forecast_days=3):
             raw=forecast_balances[0]["raw_mm"],
             future_etc=[],
             future_rain=future_rain,
-            rain_probability=rain_probability,
+            rain_probability=probability,
             heat_result=heat_result,
             maximum_depth=max_advised_depth(crop),
             forecast_balances=forecast_balances
@@ -221,19 +262,27 @@ def main():
     parser.add_argument("--soil", default="loam")
     parser.add_argument("--crop", default="wheat")
     parser.add_argument("--forecast-days", type=int, default=3)
-    parser.add_argument("--rain-probability", type=float, default=1.0)
+    parser.add_argument("--rain-probability", type=float, default=None,
+                        help="trust forecast rain at this probability (default: not trusted)")
+    parser.add_argument("--forecast", help="archived forecast file (historical-forecast)")
     parser.add_argument("--out")
     args = parser.parse_args()
 
     with open(args.weather, "r") as file:
         weather = json.load(file)
 
+    forecast = None
+
+    if args.forecast:
+        with open(args.forecast, "r") as file:
+            forecast = json.load(file)
+
     result = simulate_season(
         weather,
         args.sow,
         args.soil,
         crop=args.crop,
-        policy=boond_policy(args.rain_probability, args.forecast_days)
+        policy=boond_policy(args.rain_probability, args.forecast_days, forecast)
     )
 
     print(json.dumps(result["summary"], indent=2))
