@@ -1,0 +1,16 @@
+{
+  "sandy": {
+    "theta_fc": 0.15,
+    "theta_wp": 0.06
+  },
+
+  "loam": {
+    "theta_fc": 0.25,
+    "theta_wp": 0.12
+  },
+
+  "clay": {
+    "theta_fc": 0.35,
+    "theta_wp": 0.23
+  }
+}

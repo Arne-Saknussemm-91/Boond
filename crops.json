@@ -1,0 +1,40 @@
+{
+  "wheat": {
+    "total_days": 120,
+
+    "stages": {
+      "initial": {
+        "days": 15,
+        "kc_start": 0.30,
+        "kc_end": 0.30
+      },
+      "development": {
+        "days": 25,
+        "kc_start": 0.30,
+        "kc_end": 1.15
+      },
+      "mid": {
+        "days": 50,
+        "kc_start": 1.15,
+        "kc_end": 1.15
+      },
+      "late": {
+        "days": 30,
+        "kc_start": 1.15,
+        "kc_end": 0.40
+      }
+    },
+
+    "heat_thresholds": {
+      "flowering": 31.0,
+      "grain_filling": 35.0
+    },
+
+    "depletion_fraction": 0.55,
+
+    "root_depth": {
+      "initial_m": 0.30,
+      "maximum_m": 1.00
+    }
+  }
+}
