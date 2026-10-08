@@ -51,6 +51,7 @@
 
   "kc_climate_adjustment": {
     "enabled": false,
+    "_status": "NOT IMPLEMENTED in the engine (future work: needs daily RHmin and mean 2 m wind). check_data fails if this is set to true, so nobody believes it is applied.",
     "_why": "FAO-56 Eq. 62 (Kc mid) and Eq. 65 (Kc end, only if the table value > 0.45): Kc = Kc_table + [0.04 (u2 - 2) - 0.004 (RHmin - 45)] (h / 3)^0.3, with u2 1-6 m/s, RHmin 20-80 %, h = max_crop_height_m in crops.json. Off by default so engine output matches the table values and your unit tests.",
     "wind_10m_to_2m_factor": 0.748,
     "_why_wind_factor": "FAO-56 Eq. 47: u2 = u10 x 4.87 / ln(67.8 x 10 - 5.42) = 0.748 x u10. Use a daily MEAN wind, not wind_speed_10m_max, if you enable this."

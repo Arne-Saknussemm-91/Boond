@@ -27,42 +27,25 @@ import argparse
 import json
 from datetime import date
 
-from engine.advisor import make_daily_decision
-from engine.critical import critical_irrigation_due
-from engine.daily_engine import calculate_resources
-from engine.data import get_setting, is_paddy, max_advised_depth
-from engine.heat_rules import assess_heat_risk
-from engine.kc import get_kc, get_season_length
-from engine.paddy import decide_paddy, initial_paddy_state, update_paddy_day
-from engine.water_balance import (
-    calculate_daily_balance,
-    calculate_p,
-    calculate_raw,
-    calculate_taw,
-    forecast_water_balance,
-    get_root_depth
+from engine.data import is_paddy
+from engine.field_runner import (
+    apply_day,
+    calculate_resources,
+    decide_today,
+    start_state,
+    starting_depletion
 )
+from engine.kc import get_season_length
 
 
-def starting_depletion(soil, et0, crop="wheat"):
-    """
-    Depletion at sowing: 0 after a pre-sowing irrigation,
-    otherwise RAW (config root_zone.assume_full_at_sowing).
-    """
-    if get_setting("root_zone", "assume_full_at_sowing"):
-        return 0.0
-
-    taw = calculate_taw(soil, get_root_depth(1, crop))
-    p = calculate_p(get_kc(1, crop) * et0, crop=crop, day_after_sowing=1)
-
-    return calculate_raw(taw, p)
+__all__ = ["boond_policy", "simulate_season", "starting_depletion"]
 
 
 def _forecast_window(context, forecast_days, forecast, rain_probability):
     """
-    Return (et0, rain, tmax, probability) lists for the forecast that
-    starts today. From the archived forecast file when given (matched
-    by date), otherwise from the actual weather.
+    The forecast that starts today, in the field_runner layout. From
+    the archived forecast file when given (matched by date), otherwise
+    from the actual weather (perfect foresight).
     """
     if forecast is None:
         daily = context["weather"]
@@ -84,12 +67,20 @@ def _forecast_window(context, forecast_days, forecast, rain_probability):
     else:
         probability = [rain_probability] * len(et0)
 
-    return et0, daily["rain_mm"][window], daily["tmax_c"][window], probability
+    return {
+        "date": daily["date"][window],
+        "et0_mm": et0,
+        "rain_mm": daily["rain_mm"][window],
+        "tmax_c": daily["tmax_c"][window],
+        "rain_prob": probability
+    }
 
 
-def boond_policy(rain_probability=None, forecast_days=3, forecast=None):
+def boond_policy(rain_probability=None, forecast_days=16, forecast=None):
     """
-    The Boond advisor as a simulation policy.
+    The Boond advisor as a simulation policy: exactly
+    engine.field_runner.decide_today, the function the live daily
+    job uses, with the same 16-day forecast length as Open-Meteo.
 
     rain_probability=None means forecast rain is not trusted (unless
     the forecast file carries its own rain_prob). Pass 1.0 only for
@@ -97,48 +88,11 @@ def boond_policy(rain_probability=None, forecast_days=3, forecast=None):
     """
 
     def decide(context):
-        day = context["day"]
-        crop = context["crop"]
-
-        future_et0, future_rain, future_tmax, probability = _forecast_window(
-            context, forecast_days, forecast, rain_probability
-        )
-        heat_result = assess_heat_risk(day, future_tmax, crop)
-
-        if context["paddy"]:
-            return decide_paddy(
-                day=day,
-                state=context["state"],
-                future_rain=future_rain,
-                rain_probability=probability,
-                heat_result=heat_result,
-                crop=crop
-            )
-
-        forecast_balances = forecast_water_balance(
-            start_day_after_sowing=day - 1,
-            soil=context["soil"],
-            future_et0=future_et0,
-            future_rain=future_rain,
-            initial_depletion=context["state"],
-            crop=crop
-        )
-
-        return make_daily_decision(
-            current_depletion=context["state"],
-            raw=forecast_balances[0]["raw_mm"],
-            future_etc=[],
-            future_rain=future_rain,
-            rain_probability=probability,
-            heat_result=heat_result,
-            maximum_depth=max_advised_depth(crop),
-            forecast_balances=forecast_balances,
-            critical=critical_irrigation_due(
-                crop,
-                day,
-                context["water_since_sowing_mm"],
-                context["sow_date"]
-            )
+        return decide_today(
+            context["field"],
+            context["field_state"],
+            _forecast_window(context, forecast_days, forecast, rain_probability),
+            context["date"]
         )
 
     return decide
@@ -155,10 +109,14 @@ def simulate_season(
     pump_efficiency=None
 ):
     """
+    Run `policy` over one season, applying each day with
+    field_runner.apply_day (the same path as the live daily job).
+
     policy(context) returns {"action", "depth_mm", "reason_code"}.
-    context has weather, index (today's row), day, date, crop,
-    soil, paddy and state (yesterday's depletion for upland
-    crops, the pond state for paddy).
+    context has field and field_state (the field_runner state at the
+    end of yesterday), weather, index (today's row), day, date,
+    sow_date, crop, soil, paddy, state (yesterday's depletion for
+    upland crops, the pond state for paddy) and water_since_sowing_mm.
     """
     daily = weather["daily"]
     dates = [date.fromisoformat(value) for value in daily["date"]]
@@ -176,20 +134,25 @@ def simulate_season(
         policy = boond_policy()
 
     paddy = is_paddy(crop)
-
-    if paddy:
-        state = initial_paddy_state(crop)
-    else:
-        state = starting_depletion(soil, daily["et0_mm"][first], crop)
+    field = {
+        "crop": crop,
+        "soil": soil,
+        "sowing_date": sow_date.isoformat(),
+        "area_acres": area_acres,
+        "lift_m": lift_m,
+        "pump_eff": pump_efficiency
+    }
+    state = start_state(field, et0=daily["et0_mm"][first])
 
     days = []
     seasonal_etc = 0.0
-    water_since_sowing = 0.0  # effective rain + irrigation after sowing
 
     for day in range(1, season_length + 1):
         today = first + day - 1
 
         decision = policy({
+            "field": field,
+            "field_state": state,
             "weather": daily,
             "index": today,
             "day": day,
@@ -198,38 +161,22 @@ def simulate_season(
             "crop": crop,
             "soil": soil,
             "paddy": paddy,
-            "state": state,
-            "water_since_sowing_mm": water_since_sowing
+            "state": state if paddy else state["depletion_mm"],
+            "water_since_sowing_mm": state["water_since_sowing_mm"]
         })
 
         irrigation = decision["depth_mm"]
 
-        if paddy:
-            state, balance = update_paddy_day(
-                day=day,
-                soil=soil,
-                et0=daily["et0_mm"][today],
-                rain=daily["rain_mm"][today],
-                irrigation=irrigation,
-                state=state,
-                crop=crop
-            )
-            losses = balance["percolation_mm"] + balance["overflow_mm"]
-        else:
-            balance = calculate_daily_balance(
-                day_after_sowing=day,
-                soil=soil,
-                et0=daily["et0_mm"][today],
-                rain=daily["rain_mm"][today],
-                irrigation=irrigation,
-                previous_depletion=state,
-                crop=crop
-            )
-            state = balance["depletion_mm"]
-            losses = balance["deep_percolation_mm"]
-            water_since_sowing += balance["effective_rain_mm"] + irrigation
+        state, row = apply_day(
+            field,
+            state,
+            dates[today],
+            daily["et0_mm"][today],
+            daily["rain_mm"][today],
+            irrigation
+        )
 
-        seasonal_etc += balance["actual_etc_mm"]
+        seasonal_etc += row["actual_etc_mm"]
 
         days.append({
             "date": daily["date"][today],
@@ -238,10 +185,10 @@ def simulate_season(
             "reason_code": decision["reason_code"],
             "irrigation_mm": round(irrigation, 2),
             "rain_mm": daily["rain_mm"][today],
-            "depletion_mm": round(balance["depletion_mm"], 2),
-            "ks": round(balance["ks"], 3),
-            "losses_mm": round(losses, 2),
-            **({"pond_mm": round(balance["pond_mm"], 2)} if paddy else {})
+            "depletion_mm": round(row["depletion_mm"], 2),
+            "ks": round(row["ks"], 3),
+            "losses_mm": round(row["losses_mm"], 2),
+            **({"pond_mm": round(row["pond_mm"], 2)} if paddy else {})
         })
 
     irrigation_mm = sum(row["irrigation_mm"] for row in days)
@@ -271,7 +218,7 @@ def main():
     parser.add_argument("--sow", required=True, type=date.fromisoformat)
     parser.add_argument("--soil", default="loam")
     parser.add_argument("--crop", default="wheat")
-    parser.add_argument("--forecast-days", type=int, default=3)
+    parser.add_argument("--forecast-days", type=int, default=16)
     parser.add_argument("--rain-probability", type=float, default=None,
                         help="trust forecast rain at this probability (default: not trusted)")
     parser.add_argument("--forecast", help="archived forecast file (historical-forecast)")

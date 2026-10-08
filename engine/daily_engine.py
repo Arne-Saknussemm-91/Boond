@@ -1,62 +1,71 @@
-from engine.critical import critical_irrigation_due
-from engine.data import get_setting, max_advised_depth
+"""
+One-call wrappers around engine.field_runner for a single day.
+
+The live daily job should use field_runner.advance_field (it stores a
+state and catches up missed days). These wrappers keep the original
+Boond_1 interface: apply one day (YESTERDAY), then decide today's
+advice, through the same apply_day / decide_today functions, so they
+can never disagree with the replay.
+"""
+
+from datetime import date, timedelta
+
+from engine.field_runner import (
+    apply_day,
+    calculate_resources,
+    decide_today
+)
 from engine.kc import get_stage
-from engine.paddy import decide_paddy, update_paddy_day
-from engine.water_balance import (
-    calculate_daily_balance,
-    forecast_water_balance
-)
-from engine.heat_rules import assess_heat_risk
-from engine.advisor import make_daily_decision
-from engine.resources import (
-    gross_depth_mm,
-    irrigation_volume_litres,
-    irrigation_volume_m3,
-    pump_energy_kwh,
-    electricity_cost,
-    co2_emissions
-)
 
 
-def calculate_resources(
-    net_depth_mm,
-    area_acres,
-    lift_m,
-    pump_efficiency=None,
-    electricity_tariff=None,
-    grid_factor=None
-):
-    """
-    Water, energy, cost and CO2e for one irrigation.
+__all__ = [
+    "calculate_resources",
+    "generate_daily_decision",
+    "generate_daily_decision_paddy"
+]
 
-    Volumes and energy use the gross (pumped) depth =
-    net depth / config irrigation.application_efficiency.
-    The cost is the cost to the power system, not the
-    farmer's bill (config cost._why).
-    """
-    if pump_efficiency is None:
-        pump_efficiency = get_setting("energy", "default_pump_efficiency")
+# Used only to turn crop days into dates when the caller has no
+# sowing date (the result does not depend on it, except the wheat
+# CRI window, which then assumes a November sowing).
+_NO_SOWING_DATE = date(2001, 11, 1)
 
-    if electricity_tariff is None:
-        electricity_tariff = get_setting("cost", "electricity_tariff_inr_per_kwh")
 
-    if grid_factor is None:
-        # t CO2 per MWh is the same number as kg CO2 per kWh.
-        grid_factor = get_setting("carbon", "grid_emission_factor_t_per_mwh")
+def _forecast(first_date, future_et0, future_rain, forecast_tmax, rain_probability):
+    days = len(future_et0)
 
-    gross_mm = gross_depth_mm(net_depth_mm)
+    if len(future_rain) != days:
+        raise ValueError("future_et0 and future_rain must have equal lengths")
 
-    litres = irrigation_volume_litres(gross_mm, area_acres)
-    volume_m3 = irrigation_volume_m3(gross_mm, area_acres)
-    energy_kwh = pump_energy_kwh(volume_m3, lift_m, pump_efficiency)
+    if rain_probability is None or isinstance(rain_probability, (int, float)):
+        probability = [rain_probability] * days
+    else:
+        probability = list(rain_probability)
+
+        if len(probability) != days:
+            raise ValueError("rain_probability must have one value per forecast day")
+
+    tmax = list(forecast_tmax or [])[:days]
+    tmax += [None] * (days - len(tmax))
 
     return {
-        "gross_depth_mm": round(gross_mm, 2),
-        "litres": round(litres, 2),
-        "volume_m3": round(volume_m3, 3),
-        "kwh": round(energy_kwh, 3),
-        "cost_inr": round(electricity_cost(energy_kwh, electricity_tariff), 2),
-        "co2_kg": round(co2_emissions(energy_kwh, grid_factor), 3)
+        "date": [(first_date + timedelta(days=i)).isoformat() for i in range(days)],
+        "et0_mm": list(future_et0),
+        "rain_mm": list(future_rain),
+        "tmax_c": tmax,
+        "rain_prob": probability
+    }
+
+
+def _field(crop, soil, sowing_date, area_acres, lift_m, pump_efficiency):
+    sowing = date.fromisoformat(sowing_date) if isinstance(sowing_date, str) else sowing_date
+
+    return {
+        "crop": crop,
+        "soil": soil,
+        "sowing_date": (sowing or _NO_SOWING_DATE).isoformat(),
+        "area_acres": area_acres,
+        "lift_m": lift_m,
+        "pump_eff": pump_efficiency
     }
 
 
@@ -82,194 +91,70 @@ def generate_daily_decision(
     sowing_date=None
 ):
     """
-    Generate one complete daily irrigation decision.
+    Apply day_after_sowing (YESTERDAY in the 06:00 job: observed et0,
+    rain and the farmer's WATERED mm), then return TODAY's advice.
 
-    et0 and rain are the values for day_after_sowing. future_et0,
-    future_rain, forecast_tmax and a per-day rain_probability list
-    start on the next day (day_after_sowing + 1).
+    future_et0, future_rain, forecast_tmax and a per-day
+    rain_probability list start today (day_after_sowing + 1).
 
-    In the 06:00 daily job, call it for YESTERDAY:
-        day_after_sowing = (yesterday - sowing_date).days + 1
-        et0, rain        = yesterday's observed values (forecast API past_days)
-        irrigation       = yesterday's WATERED check-ins (mm)
-        future_*         = the forecast starting TODAY
-    The returned action is then today's advice. This matches
-    engine/simulate.py, which decides each morning from yesterday's
-    ending depletion. Passing today's forecast as et0/rain instead
-    would shift every decision by a day.
+    water_since_sowing_mm is the effective rain + irrigation that
+    reached the field before day_after_sowing (0 on the sowing date);
+    with sowing_date it enables the wheat CRI irrigation. If it is
+    None that rule is skipped. The returned water_since_sowing_mm is
+    stored for the next call.
 
-    The growth stage and heat window are derived from the
-    crop day. Settings left as None come from config.json.
-
-    water_since_sowing_mm is the effective rain plus irrigation that
-    reached the field BEFORE day_after_sowing (store the returned
-    value with the field and pass it back next time; start at 0 on
-    the sowing date). With it and sowing_date, crops that have a
-    "critical_irrigation" block (wheat CRI) get their growth-stage
-    irrigation. If it is None that rule is skipped.
-
-    This function combines:
-
-        1. Water balance
-        2. Heat risk
-        3. Irrigation decision
-        4. Water volume
-        5. Pump energy
-        6. Electricity cost
-        7. CO2 emissions
+    Fields describing the applied day (kc, et0_mm, etc_mm, ks,
+    depletion_mm, raw_mm, taw_mm, stage) refer to day_after_sowing;
+    action, depth_mm, reason_code and the outlook are today's advice.
     """
+    field = _field(crop, soil, sowing_date, area_acres, lift_m, pump_efficiency)
+    applied_date = date.fromisoformat(field["sowing_date"]) + timedelta(days=day_after_sowing - 1)
 
-    # -------------------------------------------------
-    # STEP 0: Fill in configured defaults
-    # -------------------------------------------------
+    state = {
+        "last_processed_date": (applied_date - timedelta(days=1)).isoformat(),
+        "depletion_mm": previous_depletion,
+        "water_since_sowing_mm": water_since_sowing_mm
+    }
 
-    if maximum_irrigation_depth is None:
-        maximum_irrigation_depth = max_advised_depth(crop)
+    if water_since_sowing_mm is None:
+        # Track nothing: the CRI rule is skipped.
+        state["water_since_sowing_mm"] = 0.0
 
-    # -------------------------------------------------
-    # STEP 1: Calculate today's water balance
-    # -------------------------------------------------
+    state, row = apply_day(field, state, applied_date, et0, rain, irrigation)
 
-    balance = calculate_daily_balance(
-        day_after_sowing=day_after_sowing,
-        soil=soil,
-        et0=et0,
-        rain=rain,
-        irrigation=irrigation,
-        previous_depletion=previous_depletion,
-        crop=crop
-    )
-    forecast_balances = forecast_water_balance(
-        start_day_after_sowing=day_after_sowing,
-        soil=soil,
-        future_et0=future_et0,
-        future_rain=future_rain,
-        initial_depletion=balance["depletion_mm"],
-        crop=crop
-    )
+    if water_since_sowing_mm is None:
+        state["water_since_sowing_mm"] = None
 
-    # -------------------------------------------------
-    # STEP 2: Calculate heat risk
-    # -------------------------------------------------
-
-    heat_result = assess_heat_risk(
-        first_day_after_sowing=day_after_sowing + 1,
-        forecast_tmax=forecast_tmax,
-        crop=crop
-    )
-
-    # -------------------------------------------------
-    # STEP 3: Make irrigation decision
-    # -------------------------------------------------
-
-    if water_since_sowing_mm is not None:
-        water_since_sowing_mm += balance["effective_rain_mm"] + irrigation
-
-    # The advice is for the next day (see the daily-job note above).
-    critical = critical_irrigation_due(
-        crop,
-        day_after_sowing + 1,
-        water_since_sowing_mm,
-        sowing_date
-    )
-
-    decision = make_daily_decision(
-        current_depletion=balance["depletion_mm"],
-        raw=balance["raw_mm"],
-        future_etc=[],
-        future_rain=future_rain,
-        rain_probability=rain_probability,
-        heat_result=heat_result,
+    advice = decide_today(
+        field,
+        state,
+        _forecast(applied_date + timedelta(days=1), future_et0, future_rain,
+                  forecast_tmax, rain_probability),
+        applied_date + timedelta(days=1),
         maximum_depth=maximum_irrigation_depth,
-        forecast_balances=forecast_balances,
-        critical=critical
+        electricity_tariff=electricity_tariff,
+        grid_factor=grid_factor
     )
 
-    # -------------------------------------------------
-    # STEP 4: Calculate water and energy
-    # -------------------------------------------------
-
-    depth_mm = decision["depth_mm"]
-
-    resources = calculate_resources(
-        depth_mm,
-        area_acres,
-        lift_m,
-        pump_efficiency,
-        electricity_tariff,
-        grid_factor
-    )
-
-    # -------------------------------------------------
-    # STEP 5: Build final engine output
-    # -------------------------------------------------
+    taw = row["taw_mm"]
 
     return {
+        **advice,
         "day_after_sowing": day_after_sowing,
-        "crop": crop,
-
-        "action": decision["action"],
-        "depth_mm": round(depth_mm, 2),
-
         "stage": get_stage(day_after_sowing, crop),
-        "heat_stage": heat_result["stage"],
-        "heat_risk": heat_result["heat_risk"],
-        "max_forecast_tmax_c": heat_result["max_forecast_tmax_c"],
-
         "rain_probability": rain_probability,
-        "rain_next_3d_mm": round(
-            sum(future_rain[:get_setting("advisor", "rain_skip_window_days")]),
-            2
-        ),
-
-        "kc": round(balance["kc"], 3),
-        "et0_mm": round(balance["et0_mm"], 2),
-        "etc_mm": round(balance["actual_etc_mm"], 2),
-
-        "depletion_mm": round(
-            balance["depletion_mm"],
-            2
-        ),
-
-        "raw_mm": round(
-            balance["raw_mm"],
-            2
-        ),
-
-        "taw_mm": round(
-            balance["taw_mm"],
-            2
-        ),
-
-        "ks": round(
-            balance["ks"],
-            3
-        ),
-
-        "water_wallet_pct": round(
-            max(
-                0,
-                min(
-                    100,
-                    100 * (
-                        1 -
-                        balance["depletion_mm"]
-                        / balance["taw_mm"]
-                    )
-                )
-            ),
-            1
-        ),
-
-        "crossing_day": decision["crossing_day"],
-
-        "reason_code": decision["reason_code"],
-        "critical_stage": critical["name"] if critical else None,
+        "kc": round(row["kc"], 3),
+        "et0_mm": round(row["et0_mm"], 2),
+        "etc_mm": round(row["actual_etc_mm"], 2),
+        "depletion_mm": round(row["depletion_mm"], 2),
+        "raw_mm": round(row["raw_mm"], 2),
+        "taw_mm": round(taw, 2),
+        "ks": round(row["ks"], 3),
+        "water_wallet_pct": round(max(0.0, min(100.0, 100 * (1 - row["depletion_mm"] / taw))), 1),
         "water_since_sowing_mm": (
-            None if water_since_sowing_mm is None else round(water_since_sowing_mm, 2)
-        ),
-
-        **resources
+            None if water_since_sowing_mm is None
+            else round(state["water_since_sowing_mm"], 2)
+        )
     }
 
 
@@ -291,71 +176,44 @@ def generate_daily_decision_paddy(
     crop="paddy"
 ):
     """
-    Daily decision for transplanted paddy (DATA_GUIDE 4.6).
-
-    state is yesterday's {"pond_mm", "depletion_mm", "dry_days"}
-    (engine.paddy.initial_paddy_state() at transplanting).
-    Today's weather is applied, then the PAU rule decides.
-    The returned "state" is stored for tomorrow.
+    Paddy: apply day_after_transplanting (yesterday) to state =
+    {"pond_mm", "depletion_mm", "dry_days"}, then decide today's
+    advice with the PAU rule. The returned "state" is stored for the
+    next call.
     """
+    field = _field(crop, soil, None, area_acres, lift_m, pump_efficiency)
+    applied_date = date.fromisoformat(field["sowing_date"]) + timedelta(days=day_after_transplanting - 1)
 
-    state, details = update_paddy_day(
-        day=day_after_transplanting,
-        soil=soil,
-        et0=et0,
-        rain=rain,
-        irrigation=irrigation,
-        state=state,
-        crop=crop
+    field_state = {
+        "last_processed_date": (applied_date - timedelta(days=1)).isoformat(),
+        "water_since_sowing_mm": 0.0,
+        **state
+    }
+
+    field_state, row = apply_day(field, field_state, applied_date, et0, rain, irrigation)
+
+    future_et0 = [0.0] * len(future_rain)  # paddy decisions do not use ET0 forecasts
+    advice = decide_today(
+        field,
+        field_state,
+        _forecast(applied_date + timedelta(days=1), future_et0, future_rain,
+                  forecast_tmax, rain_probability),
+        applied_date + timedelta(days=1),
+        electricity_tariff=electricity_tariff,
+        grid_factor=grid_factor
     )
 
-    heat_result = assess_heat_risk(
-        first_day_after_sowing=day_after_transplanting + 1,
-        forecast_tmax=forecast_tmax,
-        crop=crop
-    )
-
-    decision = decide_paddy(
-        day=day_after_transplanting,
-        state=state,
-        future_rain=future_rain,
-        rain_probability=rain_probability,
-        heat_result=heat_result,
-        crop=crop
-    )
+    new_state = {key: field_state[key] for key in ("pond_mm", "depletion_mm", "dry_days")}
 
     return {
+        **advice,
         "day_after_transplanting": day_after_transplanting,
-        "crop": crop,
-
-        "action": decision["action"],
-        "depth_mm": round(decision["depth_mm"], 2),
-        "reason_code": decision["reason_code"],
-
         "stage": get_stage(day_after_transplanting, crop),
-        "heat_stage": heat_result["stage"],
-        "heat_risk": heat_result["heat_risk"],
-        "max_forecast_tmax_c": heat_result["max_forecast_tmax_c"],
-        "rain_next_3d_mm": round(
-            sum(future_rain[:get_setting("advisor", "rain_skip_window_days")]),
-            2
-        ),
-
-        "pond_mm": round(state["pond_mm"], 2),
-        "depletion_mm": round(state["depletion_mm"], 2),
-        "dry_days": state["dry_days"],
-        "kc": round(details["kc"], 3),
-        "etc_mm": round(details["actual_etc_mm"], 2),
-        "percolation_mm": round(details["percolation_mm"], 2),
-
-        "state": state,
-
-        **calculate_resources(
-            decision["depth_mm"],
-            area_acres,
-            lift_m,
-            pump_efficiency,
-            electricity_tariff,
-            grid_factor
-        )
+        "pond_mm": round(new_state["pond_mm"], 2),
+        "depletion_mm": round(new_state["depletion_mm"], 2),
+        "dry_days": new_state["dry_days"],
+        "kc": round(row["kc"], 3),
+        "etc_mm": round(row["actual_etc_mm"], 2),
+        "percolation_mm": round(row["percolation_mm"], 2),
+        "state": new_state
     }

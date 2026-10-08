@@ -49,3 +49,14 @@ def test_heat_depth_comes_from_config(monkeypatch):
     )
 
     assert result["depth_mm"] == 20
+
+
+def test_check_data_rejects_the_unimplemented_kc_climate_adjustment(monkeypatch):
+    from engine.check_data import check_config
+
+    config = copy.deepcopy(data.load_config())
+    assert check_config(config) == []
+
+    config["kc_climate_adjustment"]["enabled"] = True
+
+    assert any("kc_climate_adjustment" in problem for problem in check_config(config))

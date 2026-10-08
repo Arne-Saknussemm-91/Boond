@@ -160,6 +160,12 @@ def check_config(config):
     if config["advisor"]["irrigate_within_days"] > config["advisor"]["rain_skip_window_days"]:
         problems.append("config: advisor.irrigate_within_days exceeds rain_skip_window_days")
 
+    if config.get("kc_climate_adjustment", {}).get("enabled"):
+        problems.append(
+            "config: kc_climate_adjustment.enabled is true, but the engine does not "
+            "implement it (it needs daily RHmin and mean wind inputs); keep it false"
+        )
+
     return problems
 
 

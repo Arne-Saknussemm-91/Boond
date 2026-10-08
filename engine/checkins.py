@@ -34,19 +34,54 @@ def rain_mm(level):
     return float(amounts[level])
 
 
+def make_event(event_type, level, on_date, crop="wheat"):
+    """
+    The EVENT item to store for a check-in (spec 10.1): the farmer's
+    choice verbatim plus the millimetres assumed at that time, so a
+    later change to config.json does not rewrite history.
+    """
+    event_type = event_type.upper()
+
+    if event_type == "WATERED":
+        mm = watered_mm(level, crop)
+    elif event_type == "RAIN":
+        mm = rain_mm(level)
+    else:
+        raise ValueError(f"Unknown check-in type: {event_type}")
+
+    return {
+        "date": str(on_date),
+        "type": event_type,
+        "choice": level,
+        "level": level.lower(),
+        "mm_assumed": mm
+    }
+
+
+def _event_mm(event, crop):
+    if event.get("mm_assumed") is not None:
+        return float(event["mm_assumed"])
+
+    if event["type"].upper() == "RAIN":
+        return rain_mm(event["level"])
+
+    return watered_mm(event["level"], crop)
+
+
 def apply_checkins(gridded_rain_mm, events, crop="wheat"):
     """
     Return (rain_mm, irrigation_mm) for one day.
 
-    events is a list of {"type": "WATERED" | "RAIN", "level": ...}
-    for that day. A RAIN check-in replaces the gridded rain
+    events is a list of {"type": "WATERED" | "RAIN", "level": ...,
+    "mm_assumed": optional} for that day; a stored mm_assumed wins
+    over the level. A RAIN check-in replaces the gridded rain
     rather than adding to it, so the same rain is not counted
     twice. If there are several RAIN check-ins, the largest wins.
     WATERED check-ins add up.
     """
     rain = gridded_rain_mm
     reported_rain = [
-        rain_mm(event["level"])
+        _event_mm(event, crop)
         for event in events
         if event["type"].upper() == "RAIN"
     ]
@@ -55,7 +90,7 @@ def apply_checkins(gridded_rain_mm, events, crop="wheat"):
         rain = max(reported_rain)
 
     irrigation = sum(
-        watered_mm(event["level"], crop)
+        _event_mm(event, crop)
         for event in events
         if event["type"].upper() == "WATERED"
     )
