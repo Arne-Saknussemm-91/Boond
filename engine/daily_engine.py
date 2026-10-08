@@ -192,6 +192,7 @@ def generate_daily_decision(
         "stage": get_stage(day_after_sowing, crop),
         "heat_stage": heat_result["stage"],
         "heat_risk": heat_result["heat_risk"],
+        "max_forecast_tmax_c": heat_result["max_forecast_tmax_c"],
 
         "rain_probability": rain_probability,
         "rain_next_3d_mm": round(
@@ -308,6 +309,11 @@ def generate_daily_decision_paddy(
         "stage": get_stage(day_after_transplanting, crop),
         "heat_stage": heat_result["stage"],
         "heat_risk": heat_result["heat_risk"],
+        "max_forecast_tmax_c": heat_result["max_forecast_tmax_c"],
+        "rain_next_3d_mm": round(
+            sum(future_rain[:get_setting("advisor", "rain_skip_window_days")]),
+            2
+        ),
 
         "pond_mm": round(state["pond_mm"], 2),
         "depletion_mm": round(state["depletion_mm"], 2),
