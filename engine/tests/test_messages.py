@@ -5,7 +5,7 @@ import pytest
 
 from engine.daily_engine import generate_daily_decision, generate_daily_decision_paddy
 from engine.data import entries, load_json
-from engine.messages import LANGUAGES, render
+from engine.messages import LANGUAGES, allowed_numbers, numbers_in, render
 
 
 ENGINE = Path(__file__).resolve().parents[1]
@@ -61,7 +61,7 @@ def test_heat_on_moist_soil_message():
     result = wheat_heat_day()
 
     assert result["reason_code"] == "HEAT_RISK_SOIL_MOIST"
-    assert render(result, "hi") == (
+    assert render(result, "hi", footer=False) == (
         "गर्मी की चेतावनी: फूल आने के समय तापमान 36.4°C तक जा सकता है। "
         "मिट्टी में अभी नमी है, इसलिए आज सिंचाई न करें। बूंद कल फिर जाँच करेगा।"
     )
@@ -72,7 +72,7 @@ def test_heat_with_rain_expected_message():
     result = wheat_heat_day(future_rain=[0.0, 20.0, 0.0], rain_probability=[0.1, 0.9, 0.1])
 
     assert result["reason_code"] == "HEAT_RISK_RAIN_EXPECTED"
-    assert render(result, "hi") == (
+    assert render(result, "hi", footer=False) == (
         "गर्मी की चेतावनी: फूल आने के समय तापमान 36.4°C तक जा सकता है, "
         "लेकिन अगले 3 दिनों में बारिश की संभावना है (20 मिमी का अनुमान)। "
         "गर्मी से बचाव के लिए सिंचाई की ज़रूरत नहीं है।"
@@ -111,3 +111,53 @@ def test_unknown_language_or_code_raises():
 
     with pytest.raises(ValueError):
         render({"reason_code": "NOT_A_CODE"}, "hi")
+
+
+def test_every_message_ends_with_the_decision_support_footer():
+    result = wheat_heat_day()
+
+    assert render(result, "hi").endswith("यह सलाह है, अंतिम फैसला आपका है।")
+    assert render(result, "en").endswith("This is advice; the final decision is yours.")
+
+
+def test_depth_is_shown_in_whole_mm():
+    result = wheat_heat_day(day_after_sowing=80, previous_depletion=67.4,
+                            future_et0=[4.3, 4.3, 4.3], forecast_tmax=[25.0, 25.0, 25.0])
+
+    assert result["action"] == "IRRIGATE"
+    assert result["depth_mm"] != round(result["depth_mm"])
+    assert f"लगभग {round(result['depth_mm'])} मिमी" in render(result, "hi")
+
+
+def test_heat_irrigation_is_for_the_evening():
+    result = wheat_heat_day(previous_depletion=45.0)
+
+    assert "आज शाम लगभग 40 मिमी" in render(result, "hi")
+    assert "this evening" in render(result, "en")
+
+
+def test_critical_stage_message():
+    result = wheat_heat_day(day_after_sowing=27, previous_depletion=10.0,
+                            forecast_tmax=[22.0, 22.0, 22.0],
+                            water_since_sowing_mm=0.0, sowing_date="2021-11-05")
+
+    assert result["reason_code"] == "CRITICAL_STAGE_IRRIGATION"
+    assert "शिखर जड़ (क्राउन रूट) बनने के समय लगभग 50 मिमी" in render(result, "hi")
+
+
+def test_rendered_numbers_pass_the_bedrock_number_check():
+    for result in (
+        wheat_heat_day(),
+        wheat_heat_day(previous_depletion=45.0),
+        wheat_heat_day(day_after_sowing=80, previous_depletion=67.4,
+                       future_et0=[4.3, 4.3, 4.3], forecast_tmax=[25.0, 25.0, 25.0]),
+    ):
+        for lang in LANGUAGES:
+            assert numbers_in(render(result, lang)) <= allowed_numbers(result)
+
+
+def test_bedrock_check_rejects_a_changed_amount():
+    result = wheat_heat_day(previous_depletion=45.0)
+    rewritten = render(result, "en").replace("40 mm", "45 mm")
+
+    assert not numbers_in(rewritten) <= allowed_numbers(result)

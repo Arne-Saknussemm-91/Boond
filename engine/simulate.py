@@ -28,6 +28,7 @@ import json
 from datetime import date
 
 from engine.advisor import make_daily_decision
+from engine.critical import critical_irrigation_due
 from engine.daily_engine import calculate_resources
 from engine.data import get_setting, is_paddy, max_advised_depth
 from engine.heat_rules import assess_heat_risk
@@ -131,7 +132,13 @@ def boond_policy(rain_probability=None, forecast_days=3, forecast=None):
             rain_probability=probability,
             heat_result=heat_result,
             maximum_depth=max_advised_depth(crop),
-            forecast_balances=forecast_balances
+            forecast_balances=forecast_balances,
+            critical=critical_irrigation_due(
+                crop,
+                day,
+                context["water_since_sowing_mm"],
+                context["sow_date"]
+            )
         )
 
     return decide
@@ -177,6 +184,7 @@ def simulate_season(
 
     days = []
     seasonal_etc = 0.0
+    water_since_sowing = 0.0  # effective rain + irrigation after sowing
 
     for day in range(1, season_length + 1):
         today = first + day - 1
@@ -190,7 +198,8 @@ def simulate_season(
             "crop": crop,
             "soil": soil,
             "paddy": paddy,
-            "state": state
+            "state": state,
+            "water_since_sowing_mm": water_since_sowing
         })
 
         irrigation = decision["depth_mm"]
@@ -218,6 +227,7 @@ def simulate_season(
             )
             state = balance["depletion_mm"]
             losses = balance["deep_percolation_mm"]
+            water_since_sowing += balance["effective_rain_mm"] + irrigation
 
         seasonal_etc += balance["actual_etc_mm"]
 

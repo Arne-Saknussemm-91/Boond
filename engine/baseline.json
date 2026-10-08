@@ -26,7 +26,9 @@
     "rain_rule": {
       "delay_days_per_cm_rain_until_jan_31": 5,
       "delay_days_per_cm_rain_after_jan_31": 2,
-      "_note": "PAU: for each cm of rain, extend the next interval by 5 days up to end of January and by 2 days after that. Applying this makes the baseline fair."
+      "max_rain_credit_mm_per_interval": 75,
+      "_note": "PAU: for each cm of rain, extend the next interval by 5 days up to end of January and by 2 days after that. Applying this makes the baseline fair.",
+      "_note_cap": "ASSUMPTION: at most 75 mm of rain (one PAU irrigation of 7.5 cm) is credited per interval. Without a cap, the record January 2022 rain (~119 mm at Ludhiana) delays the next irrigation by ~60 days and the baseline skips almost every irrigation."
     },
     "stop_irrigation": { "timely_sown": "03-31", "sown_after_dec_5": "04-10" },
     "expected_irrigations_after_sowing": 4

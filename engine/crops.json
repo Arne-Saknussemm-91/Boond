@@ -49,10 +49,19 @@
     "critical_water_stages": ["CRI (~20-22 DAS)", "tillering/jointing", "booting-heading", "anthesis", "milk/early grain fill"],
     "ky_fao33": { "initial": 0.2, "development": 0.65, "mid": 0.55, "late": null, "total": 1.05 },
     "_ky_note": "Yield-response factors from FAO Irrigation & Drainage Paper 33 via FAO Land & Water wheat page. Only needed if you later estimate yield loss from stress days (not in the must-work scope).",
+    "critical_irrigation": {
+      "name": "CRI",
+      "day_if_sown_in_october": 21,
+      "day_if_sown_later": 28,
+      "window_days": 7,
+      "skip_if_water_since_sowing_mm": 25,
+      "depth_mm": 50,
+      "_source": "PAU Rabi 2025-26 p.17: first irrigation 'relatively light', 3 weeks after sowing for October-sown and 4 weeks for later-sown wheat (crown root initiation). A soil-water balance alone never triggers it when the root zone starts full. ASSUMPTIONS: skipped if at least 25 mm of effective rain or irrigation has reached the field since sowing; window 7 days; depth 50 mm (= the light check-in depth)."
+    },
     "max_crop_height_m": 1.0,
     "validation_targets": {
-      "seasonal_etc_mm": [350, 450],
-      "_note": "ASSUMPTION/sanity range for Punjab timely-sown wheat: FAO gives 450-650 mm for high-yield wheat worldwide; a drip-wheat study at Jalandhar (Sharma et al. 2024) implies ~325 mm crop ET over 133 days; PAU's schedule = 10 cm pre-sowing + ~4 x 7.5 cm + winter rain. If your 2021-22 replay gives seasonal ETc far outside 300-500 mm, check ET0 units or the Kc curve."
+      "seasonal_etc_mm": [280, 450],
+      "_note": "Lower bound lowered from 350 to 280 mm after the real 2021-22 Ludhiana replay (Open-Meteo ERA5 archive) gave 286 mm stress-free ETc. ASSUMPTION/sanity range for Punjab timely-sown wheat: FAO gives 450-650 mm for high-yield wheat worldwide; a drip-wheat study at Jalandhar (Sharma et al. 2024) implies ~325 mm crop ET over 133 days; PAU's schedule = 10 cm pre-sowing + ~4 x 7.5 cm + winter rain. If your 2021-22 replay gives seasonal ETc far outside 300-500 mm, check ET0 units or the Kc curve."
     }
   },
 
@@ -84,6 +93,15 @@
       "last_irrigation": { "timely_sown_until": "03-31", "sown_after_dec_5_until": "04-10" }
     },
     "sowing_window": { "start": "11-22", "end": "12-20" },
+    "critical_irrigation": {
+      "name": "CRI",
+      "day_if_sown_in_october": 21,
+      "day_if_sown_later": 28,
+      "window_days": 7,
+      "skip_if_water_since_sowing_mm": 25,
+      "depth_mm": 50,
+      "_source": "PAU Rabi 2025-26 p.17: first irrigation 'relatively light', 3 weeks after sowing for October-sown and 4 weeks for later-sown wheat (crown root initiation). A soil-water balance alone never triggers it when the root zone starts full. ASSUMPTIONS: skipped if at least 25 mm of effective rain or irrigation has reached the field since sowing; window 7 days; depth 50 mm (= the light check-in depth)."
+    },
     "max_crop_height_m": 1.0,
     "validation_targets": { "seasonal_etc_mm": [300, 420], "_note": "ASSUMPTION: shorter season than timely wheat." }
   },
@@ -109,6 +127,15 @@
     "irrigation": {
       "checkin_depth_mm": { "light": 50, "normal": 75, "heavy": 100 },
       "max_advised_depth_mm": 75
+    },
+    "critical_irrigation": {
+      "name": "CRI",
+      "day_if_sown_in_october": 21,
+      "day_if_sown_later": 28,
+      "window_days": 7,
+      "skip_if_water_since_sowing_mm": 25,
+      "depth_mm": 50,
+      "_source": "PAU Rabi 2025-26 p.17: first irrigation 'relatively light', 3 weeks after sowing for October-sown and 4 weeks for later-sown wheat (crown root initiation). A soil-water balance alone never triggers it when the root zone starts full. ASSUMPTIONS: skipped if at least 25 mm of effective rain or irrigation has reached the field since sowing; window 7 days; depth 50 mm (= the light check-in depth)."
     },
     "max_crop_height_m": 1.0
   },

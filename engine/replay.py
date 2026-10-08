@@ -63,6 +63,9 @@ def wheat_baseline(sow_date):
     and for each cm of rain the next interval is extended by 5 days
     until 31 January and 2 days after that. PAU states the rain
     rule for intervals, so it starts after the first irrigation.
+    At most rain_rule.max_rain_credit_mm_per_interval of rain is
+    credited per interval (one irrigation's worth), so one very wet
+    spell cannot cancel the rest of the schedule.
     """
     plan = load_json("baseline.json")["wheat"]
     first = plan["first_irrigation"]
@@ -84,9 +87,12 @@ def wheat_baseline(sow_date):
     end_of_january = _season_date(sow_date, "01-31")
     rain_rule = plan["rain_rule"]
 
+    max_credit = rain_rule.get("max_rain_credit_mm_per_interval", math.inf)
+
     state = {
         "next_due": first["day_if_sown_in_october" if sow_date.month == 10 else "day_if_sown_later"],
-        "count": 0
+        "count": 0,
+        "credited_mm": 0.0
     }
 
     def decide(context):
@@ -97,7 +103,9 @@ def wheat_baseline(sow_date):
                 if rain_date <= end_of_january
                 else rain_rule["delay_days_per_cm_rain_after_jan_31"]
             )
-            state["next_due"] += _yesterday_rain(context) / 10 * days_per_cm
+            credit = min(_yesterday_rain(context), max_credit - state["credited_mm"])
+            state["credited_mm"] += credit
+            state["next_due"] += credit / 10 * days_per_cm
 
         if context["date"] > stop or context["day"] < state["next_due"]:
             return _action(0, "BASELINE_WAIT")
@@ -108,6 +116,7 @@ def wheat_baseline(sow_date):
             context["day"] + weeks[count] * 7 if count < len(weeks) else math.inf
         )
         state["count"] += 1
+        state["credited_mm"] = 0.0
 
         return _action(depth, "BASELINE_PAU_CALENDAR")
 
@@ -201,6 +210,20 @@ def replay(weather, crop, sow_date, soil, rain_probability=None, forecast=None):
     forecast file carries rain_prob. 1.0 = perfect rain forecast
     (sensitivity run only; label it).
     """
+    if forecast is not None:
+        actual, predicted = weather["daily"], forecast["daily"]
+
+        if all(
+            actual[key] == predicted.get(key)
+            for key in ("date", "et0_mm", "rain_mm", "tmax_c")
+        ):
+            raise ValueError(
+                "The forecast file is identical to the weather file, so it is not "
+                "an archived forecast. Fetch it with --source historical-forecast, "
+                "or run without --forecast and say that observed weather stood in "
+                "for the forecast."
+            )
+
     boond = simulate_season(
         weather, sow_date, soil, crop=crop,
         policy=boond_policy(rain_probability, forecast=forecast)

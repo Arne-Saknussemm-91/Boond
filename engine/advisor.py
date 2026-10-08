@@ -406,7 +406,8 @@ def make_daily_decision(
     heat_result,
     maximum_depth=None,
     rain_probability_threshold=None,
-    forecast_balances=None
+    forecast_balances=None,
+    critical=None
 ):
     """
     Combine heat risk and water-balance logic.
@@ -414,8 +415,12 @@ def make_daily_decision(
     Decision priority:
         1. Heat protection
         2. Irrigation required (including already past RAW)
-        3. Rain-supported skip
-        4. Wait
+        3. Critical growth-stage irrigation (critical, from
+           engine.critical.critical_irrigation_due): IRRIGATE its
+           light depth, or SKIP if confident rain in the rain
+           window covers what is still needed
+        4. Rain-supported skip
+        5. Wait
 
     Heat protection applies only when confident rain in the
     heat window is below heat.meaningful_rain_mm and the root
@@ -497,6 +502,29 @@ def make_daily_decision(
             "action": "IRRIGATE",
             "depth_mm": refill_depth,
             "reason_code": irrigation_result["reason_code"],
+            "crossing_day": irrigation_result["crossing_day"]
+        }
+
+    if critical is not None:
+        skip_days = get_setting("advisor", "rain_skip_window_days")
+        rain_for_stage = confident_rain_total(
+            list(future_rain)[:skip_days],
+            normalise_probabilities(rain_probability, len(future_rain))[:skip_days],
+            rain_probability_threshold
+        )
+
+        if rain_for_stage >= critical["needed_mm"]:
+            return {
+                "action": "SKIP",
+                "depth_mm": 0.0,
+                "reason_code": "CRITICAL_STAGE_RAIN_EXPECTED",
+                "crossing_day": irrigation_result["crossing_day"]
+            }
+
+        return {
+            "action": "IRRIGATE",
+            "depth_mm": min(critical["depth_mm"], maximum_depth),
+            "reason_code": "CRITICAL_STAGE_IRRIGATION",
             "crossing_day": irrigation_result["crossing_day"]
         }
 

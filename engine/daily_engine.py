@@ -1,3 +1,4 @@
+from engine.critical import critical_irrigation_due
 from engine.data import get_setting, max_advised_depth
 from engine.kc import get_stage
 from engine.paddy import decide_paddy, update_paddy_day
@@ -76,7 +77,9 @@ def generate_daily_decision(
     electricity_tariff=None,
     grid_factor=None,
     maximum_irrigation_depth=None,
-    crop="wheat"
+    crop="wheat",
+    water_since_sowing_mm=None,
+    sowing_date=None
 ):
     """
     Generate one complete daily irrigation decision.
@@ -97,6 +100,13 @@ def generate_daily_decision(
 
     The growth stage and heat window are derived from the
     crop day. Settings left as None come from config.json.
+
+    water_since_sowing_mm is the effective rain plus irrigation that
+    reached the field BEFORE day_after_sowing (store the returned
+    value with the field and pass it back next time; start at 0 on
+    the sowing date). With it and sowing_date, crops that have a
+    "critical_irrigation" block (wheat CRI) get their growth-stage
+    irrigation. If it is None that rule is skipped.
 
     This function combines:
 
@@ -152,6 +162,17 @@ def generate_daily_decision(
     # STEP 3: Make irrigation decision
     # -------------------------------------------------
 
+    if water_since_sowing_mm is not None:
+        water_since_sowing_mm += balance["effective_rain_mm"] + irrigation
+
+    # The advice is for the next day (see the daily-job note above).
+    critical = critical_irrigation_due(
+        crop,
+        day_after_sowing + 1,
+        water_since_sowing_mm,
+        sowing_date
+    )
+
     decision = make_daily_decision(
         current_depletion=balance["depletion_mm"],
         raw=balance["raw_mm"],
@@ -160,7 +181,8 @@ def generate_daily_decision(
         rain_probability=rain_probability,
         heat_result=heat_result,
         maximum_depth=maximum_irrigation_depth,
-        forecast_balances=forecast_balances
+        forecast_balances=forecast_balances,
+        critical=critical
     )
 
     # -------------------------------------------------
@@ -242,6 +264,10 @@ def generate_daily_decision(
         "crossing_day": decision["crossing_day"],
 
         "reason_code": decision["reason_code"],
+        "critical_stage": critical["name"] if critical else None,
+        "water_since_sowing_mm": (
+            None if water_since_sowing_mm is None else round(water_since_sowing_mm, 2)
+        ),
 
         **resources
     }

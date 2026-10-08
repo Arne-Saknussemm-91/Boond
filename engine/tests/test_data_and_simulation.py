@@ -127,3 +127,17 @@ def test_cotton_baseline_interval():
     assert days[:3] == [35, 52, 69]
     # Last irrigation by 30 September (day 153).
     assert days[-1] <= 153
+
+
+def test_baseline_credits_at_most_one_irrigation_of_rain_per_interval():
+    # 150 mm on day 40 credits only 75 mm: +37.5 days, not +75.
+    rain = [0.0] * 160
+    rain[39] = 150.0
+    assert baseline_irrigation_days(rain)[:2] == [28, 104]
+
+
+def test_identical_forecast_file_is_rejected():
+    weather = make_weather(160)
+
+    with pytest.raises(ValueError, match="identical"):
+        replay(weather, "wheat", date(2021, 11, 10), "loam", forecast=make_weather(160))
