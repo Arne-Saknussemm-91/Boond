@@ -1,19 +1,14 @@
 import type { ReactNode } from 'react'
-import type { Action, FieldProfile, Lang, Today } from '../../types'
+import type { FieldProfile, Lang, Today } from '../../types'
 import { fill, useLang, useStrings } from '../../i18n'
 import { fullDate, num, parseDate } from '../../format'
 import { strings, type TodayStrings } from './strings'
-import { ActionIcon, CloudOffIcon } from './icons'
+import { CloudOffIcon } from './icons'
+import { ACTION_CLASS, actionKicker, actionWord } from '../../actions'
+import ActionIcon from '../../components/ActionIcon'
 import ListenButton from './ListenButton'
 import SoilColumn, { type WalletLabel } from './SoilColumn'
 import './TodaySection.css'
-
-const ACTION_CLASS: Record<Action, string> = {
-  IRRIGATE: 'irrigate',
-  SKIP: 'skip',
-  WAIT: 'wait',
-  HEAT_PROTECTION: 'heat',
-}
 
 export default function TodaySection({ field, today }: { field: FieldProfile; today: Today | null }) {
   const t = useStrings(strings)
@@ -21,6 +16,7 @@ export default function TodaySection({ field, today }: { field: FieldProfile; to
   if (!today) return <Waiting field={field} t={t} lang={lang} />
 
   const action = today.action
+  const kicker = actionKicker(action, lang)
   const reason = reasonFor(today, t, lang)
   const advice = today.advice_text[lang]
   const pumping = action === 'IRRIGATE' || action === 'HEAT_PROTECTION'
@@ -103,8 +99,8 @@ export default function TodaySection({ field, today }: { field: FieldProfile; to
               <ActionIcon action={action} size={30} />
             </span>
             <span className="today__word">
-              {action === 'HEAT_PROTECTION' && <span className="today__qualifier">{t.heat_qualifier}</span>}
-              {t[`act_${action}`]}
+              {kicker && <span className="today__qualifier">{kicker} </span>}
+              {actionWord(action, lang, 'hero')}
             </span>
           </h1>
 
@@ -113,7 +109,7 @@ export default function TodaySection({ field, today }: { field: FieldProfile; to
           {reason && <p className="today__reason">{reason}</p>}
           <p className="today__advice">{advice}</p>
 
-          <ListenButton url={today.audio_url[lang]} text={advice} lang={lang} t={t} />
+          <ListenButton key={`${lang}|${today.audio_url[lang] ?? ''}|${advice}`} url={today.audio_url[lang]} text={advice} lang={lang} t={t} />
         </div>
 
         <div className="today__wallet">

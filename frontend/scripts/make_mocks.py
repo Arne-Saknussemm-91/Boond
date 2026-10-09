@@ -88,6 +88,12 @@ LIGHT_MM = 25                           # heat-protection light irrigation (assu
 MAX_DEPTH_MM = 75                       # practical max = PAU's 7.5 cm per irrigation
 MEANINGFUL_RAIN_MM = 5                  # rain in next 3 days that cancels heat protection
 HEAT_COOLDOWN_DAYS = 2                  # don't repeat heat protection on consecutive days
+# Skip-for-rain (spec 6.6 + safety rule "never skip if D would cross RAW before the rain")
+SKIP_LOOKAHEAD = 3                      # days (today included) the rain must arrive within
+SKIP_MIN_RAIN_MM = 5                    # one day with at least this much rain ...
+SKIP_MIN_PROB = 70                      # ... at at least this probability (proxy, see below)
+SKIP_MIN_COVER = 0.5                    # effective rain refills >= half the deficit
+SKIP_HOLD_DAYS = 3                      # and keeps D above RAW for 3 more days
 
 # ---------------------------------------------------------------- water / energy / carbon
 L_PER_MM_ACRE = 4047                    # 1 mm over 1 acre (4046.86 m2)
@@ -206,10 +212,10 @@ def project(D, start, n, W, rain=True):
         w = dict(W[day])
         if not rain:
             w['rain'] = 0.0
-        D, ks, etc_adj, _ = step(D, (day - SOWING).days, w, 0)
+        D, ks, etc_adj, peff = step(D, (day - SOWING).days, w, 0)
         pr = params((day - SOWING).days, w['et0'])
         out.append({'date': day, 'D': D, 'raw': pr['raw'], 'taw': pr['taw'],
-                    'etc': etc_adj, 'w': W[day]})
+                    'etc': etc_adj, 'peff': peff, 'w': W[day]})
     return out
 
 
@@ -243,6 +249,34 @@ def heat_risk(d, W, hits):
     return 'LOW'
 
 
+def skip_for_rain(D0, d, W, wet, dry):
+    """Spec 6.6 skip rule, with the safety rule: never skip if D would cross RAW before
+    the rain arrives. SKIP only if ALL hold:
+      - without rain, D would cross RAW within SKIP_LOOKAHEAD days (otherwise it is a WAIT);
+      - one forecast day in that window has rain >= SKIP_MIN_RAIN_MM at >= SKIP_MIN_PROB;
+      - that rain falls no later than the day D would cross RAW, and the projection with
+        rain stays above the stress line on every day before it;
+      - the effective rain of that spell (that day and the SKIP_HOLD_DAYS after it) refills
+        at least SKIP_MIN_COVER of the deficit just before it;
+      - after the rain, the projection stays above the stress line for SKIP_HOLD_DAYS more days.
+    """
+    cross = next((k for k, x in enumerate(dry[:SKIP_LOOKAHEAD]) if x['D'] > x['raw']), None)
+    if cross is None:
+        return False
+    for k in range(cross + 1):              # the rain must fall on or before the crossing day
+        w = W[d + dt.timedelta(days=k)]
+        if w['rain'] < SKIP_MIN_RAIN_MM or rain_prob_proxy(w['rain']) < SKIP_MIN_PROB:
+            continue
+        if any(x['D'] > x['raw'] for x in wet[:k]):
+            return False                    # with the earlier rain, D still crosses first
+        deficit = wet[k - 1]['D'] if k > 0 else D0
+        peff = sum(x['peff'] for x in wet[k:k + 1 + SKIP_HOLD_DAYS])
+        if peff >= SKIP_MIN_COVER * deficit and not any(
+                x['D'] > x['raw'] for x in wet[:k + 1 + SKIP_HOLD_DAYS]):
+            return True
+    return False
+
+
 def decide(d, D0, W, last_heat_day):
     """Spec 6.6 decision rules, in order. D0 = depletion at 06:00 (end of yesterday)."""
     das = (d - SOWING).days
@@ -272,8 +306,8 @@ def decide(d, D0, W, last_heat_day):
             res.update(action='HEAT_PROTECTION', depth=depth, reason=f'HEAT_{heat_stage}')
             return res
         res['reason'] = 'HEAT_SOIL_MOIST'   # soil already wet; fall through
-    # 2. skip: dry soil would cross RAW within 3 days, but the (perfectly forecast) rain covers it
-    if any(x['D'] > x['raw'] for x in dry) and not any(x['D'] > x['raw'] for x in wet[:3]):
+    # 2. skip: dry soil would cross RAW within 3 days, but enough likely rain arrives first
+    if skip_for_rain(D0, d, W, wet, dry):
         res.update(action='SKIP', reason='RAIN_COVERS')
         return res
     # 3. irrigate: D will cross RAW within 2 days
@@ -361,9 +395,10 @@ def rain_prob_proxy(rain):
 
 
 # ================================================================= season simulation
-def simulate(W):
+def simulate(W, d_start=0.0):
+    """d_start: depletion at sowing; 0 = root zone full after a pre-sowing irrigation."""
     days = [SOWING + dt.timedelta(days=k) for k in range(SEASON_DAYS + 1)]
-    Db = Dbase = 0.0                    # root zone full at sowing (pre-sowing irrigation)
+    Db = Dbase = d_start
     last_heat = None
     rows = []
     for d in days:
@@ -537,6 +572,34 @@ def snapshot(rows, idx, W, failed_offset=6):
     return {'field': dict(FIELD_ACTIVE), 'today': e, 'outlook': outlook, 'history': history}
 
 
+# Test field 3: same engine, same real 2021-22 weather, but sown 5 Nov on residual moisture
+# after paddy (no pre-sowing irrigation), so 30% of the seedling root zone's water is already
+# used at sowing. Its trajectory reaches the stress line just before the 5-8 Jan 2022 rains
+# (24.3 + 8.2 + 59.6 mm), which gives a SKIP that passes the full safety rule. Only the field
+# differs from test field 1; no weather is altered.
+SKIP_FIELD_SOWING = dt.date(2021, 11, 5)
+SKIP_FIELD_START_FRAC = 0.3
+FIELD_SKIP = {**FIELD_ACTIVE, 'id': 'F-test-3',
+              'label': 'Test field 3, Ludhiana (2021–22 weather, sown without palewa)',
+              'sowing_date': SKIP_FIELD_SOWING.isoformat()}
+
+
+def skip_field_snapshot(W):
+    global SOWING
+    main_sowing = SOWING
+    SOWING = SKIP_FIELD_SOWING
+    try:
+        rows = simulate(W, d_start=SKIP_FIELD_START_FRAC * params(0, 1)['taw'])
+        i = pick(rows, lambda r: r['dec']['action'] == 'SKIP')
+        if i is None:
+            sys.exit('No SKIP day for test field 3 either; not inventing one.')
+        snap = snapshot(rows, i, W)
+    finally:
+        SOWING = main_sowing
+    snap['field'] = dict(FIELD_SKIP)
+    return snap, rows[i]
+
+
 def waiting_snapshot():
     return {
         'field': {**FIELD_ACTIVE, 'id': 'F-test-2', 'label': 'Test field 2, Ludhiana',
@@ -585,17 +648,25 @@ def main():
         notes.append('No HEAT_PROTECTION day in March; field-demo.json is an IRRIGATE day.')
         demo_idx = heat2 = irr_idx
     skip_idx = pick(rows, act('SKIP'))
-    if skip_idx is None:
-        notes.append('No SKIP day in the season; field-skip.json uses a WAIT day before rain.')
-        skip_idx = pick(rows, lambda r: r['dec']['action'] == 'WAIT' and r['dec']['rain3'] >= 5)
     # wait: a healthy jointing-stage day, preferring one whose last two weeks had rain check-ins
     wait_c = [i for i, r in enumerate(rows) if i >= 14 and r['dec']['action'] == 'WAIT'
               and r['dec']['reason'] == 'HEALTHY' and stage_of(r['das']) == 'JOINTING']
     wait_idx = max(wait_c, key=lambda i: (min(n_reports(i), 4), -i))
-    picks = {'demo': demo_idx, 'irrigate': irr_idx, 'skip': skip_idx, 'wait': wait_idx,
-             'heat': heat2}
+    picks = {'demo': demo_idx, 'irrigate': irr_idx, 'wait': wait_idx, 'heat': heat2}
+    if skip_idx is not None:
+        picks['skip'] = skip_idx
     for name, i in picks.items():
         write(f'field-{name}.json', snapshot(rows, i, W))
+    if skip_idx is None:
+        # Test field 1 never meets the skip rule in 2021-22: its only near-RAW spell (late
+        # Feb) gets 3.6 and 8.3 mm, too little and too late. Test field 3 runs the same
+        # engine on the same real weather, sown on residual moisture; it has a real SKIP day.
+        snap, r = skip_field_snapshot(W)
+        write('field-skip.json', snap)
+        notes.append(f"field-skip.json is TEST FIELD 3 (sown {SKIP_FIELD_SOWING}, "
+                     f"{SKIP_FIELD_START_FRAC:.0%} of TAW used at sowing): {r['date']} DAS {r['das']} "
+                     f"{r['dec']['action']} {r['dec']['reason']} D {r['D_morning']:.1f} "
+                     f"RAW {r['pr']['raw']:.1f} rain3 {r['dec']['rain3']:.1f}")
     write('field-waiting.json', waiting_snapshot())
 
     # ---- report

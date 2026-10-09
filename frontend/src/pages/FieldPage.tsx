@@ -7,7 +7,7 @@ import HistorySection from '../features/history/HistorySection'
 import './FieldPage.css'
 
 export default function FieldPage({ token }: { token: string }) {
-  const state = useAsync(() => fetchField(token), [token])
+  const state = useAsync(fetchField, token)
   if (state.status === 'loading') return <Loading />
   if (state.status === 'error') return <LoadError error={state.error} />
   const { field, today, outlook, history } = state.data

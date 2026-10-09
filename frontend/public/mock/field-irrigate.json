@@ -267,11 +267,11 @@
   },
   {
    "date": "2022-02-27",
-   "action": "SKIP",
+   "action": "WAIT",
    "depth_mm": 0,
    "advice_text": {
-    "hi": "आज पानी न दें। अगले तीन दिन में लगभग 3.6 मिमी बारिश होने वाली है, तब तक खेत में पानी काफ़ी है।",
-    "en": "Do not irrigate today. About 3.6 mm of rain is expected in the next three days, and the field has enough water until then."
+    "hi": "आज पानी की ज़रूरत नहीं है। खेत में अभी 47% पानी बचा है, अगला पानी लगभग 2 दिन बाद देना होगा।",
+    "en": "No irrigation needed today. The field still holds 47% of its water; the next irrigation is likely in about 2 days."
    },
    "delivery_status": "DELIVERED",
    "water_wallet_pct": 47,
@@ -333,7 +333,7 @@
     "hi": "आज पानी की ज़रूरत नहीं है। खेत में अभी 61% पानी बचा है, अगला पानी लगभग 7 दिन बाद देना होगा।",
     "en": "No irrigation needed today. The field still holds 61% of its water; the next irrigation is likely in about 7 days."
    },
-   "delivery_status": "DELIVERED",
+   "delivery_status": "FAILED",
    "water_wallet_pct": 61,
    "reports": []
   },
@@ -345,7 +345,7 @@
     "hi": "आज पानी की ज़रूरत नहीं है। खेत में अभी 63% पानी बचा है, अगला पानी लगभग 8 दिन बाद देना होगा।",
     "en": "No irrigation needed today. The field still holds 63% of its water; the next irrigation is likely in about 8 days."
    },
-   "delivery_status": "FAILED",
+   "delivery_status": "DELIVERED",
    "water_wallet_pct": 63,
    "reports": []
   },

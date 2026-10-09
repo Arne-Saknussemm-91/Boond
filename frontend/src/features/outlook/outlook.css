@@ -1,5 +1,4 @@
 .ol {
-  --rain: #4a8cc4; /* lighter than --nehar; opacity carries the chance of rain */
   max-width: 48rem;
   min-width: 0; /* let the chart shrink inside the page grid */
 }
@@ -89,14 +88,11 @@
   fill: var(--rain);
 }
 
-
 .ol__heatpill {
   fill: var(--loo-tint);
   stroke: var(--loo);
   stroke-width: 1;
 }
-
-
 
 .ol__full {
   fill: none;
@@ -125,9 +121,9 @@
 
 .ol__stress {
   fill: none;
-  stroke: var(--mitti);
-  stroke-width: 2;
-  stroke-dasharray: 6 4;
+  stroke: var(--stress);
+  stroke-width: var(--stress-width);
+  stroke-dasharray: var(--stress-dash);
 }
 
 .ol__tick {

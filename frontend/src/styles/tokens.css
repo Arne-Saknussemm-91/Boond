@@ -20,6 +20,17 @@
   --ok: #2f6b3f; /* healthy balance / wait */
   --ok-tint: #dbeadf;
 
+  --rain: #4a8cc4; /* rain from the sky: lighter than --nehar; opacity carries the chance */
+
+  /* The stress line (RAW): one look everywhere it is drawn, named "दबाव-रेखा" */
+  --stress: var(--mitti);
+  --stress-width: 2px;
+  --stress-dash: 6 4;
+
+  /* The fixed-calendar farmer in comparisons: a quiet grey, never a subject colour */
+  --baseline: #76837d;
+  --baseline-tint: #e2e7e4;
+
   /* Action colours (always paired with a word and an icon, never colour alone) */
   --action-irrigate: var(--nehar);
   --action-skip: var(--ok);

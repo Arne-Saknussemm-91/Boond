@@ -6,13 +6,14 @@ import { fill, useLang, useStrings } from '../../i18n'
 import { num } from '../../format'
 import type { Lang, ReplayResponse } from '../../types'
 import ReplayChart, { type ChartGeometry } from './ReplayChart'
-import ActionIcon from './ActionIcon'
+import { actionWord } from '../../actions'
+import ActionIcon from '../../components/ActionIcon'
 import { cumulative, dateWithYear, stressPct, waterPct, type Totals } from './model'
 import { strings, type ReplayStrings } from './strings'
 import './ReplayPage.css'
 
 export default function ReplayPage() {
-  const state = useAsync(fetchReplay, [])
+  const state = useAsync(fetchReplay)
   if (state.status === 'loading') return <Loading />
   if (state.status === 'error') return <LoadError error={state.error} />
   if (state.data.days.length === 0) return <LoadError error={new Error('replay has no days')} />
@@ -38,15 +39,15 @@ function Replay({ data }: { data: ReplayResponse }) {
   const [geo, setGeo] = useState<ChartGeometry | null>(null)
 
   useEffect(() => {
-    if (!playing) return
-    if (index >= last) {
-      setPlaying(false)
-      return
-    }
+    if (!playing || index >= last) return
     const step = Math.max(40, Math.min(90, 9000 / days.length))
     // Hold on the warning day so the viewer sees it.
     const delay = index === 0 ? 700 : index === warnIndex ? 2200 : step
-    const id = window.setTimeout(() => setIndex((i) => Math.min(last, i + 1)), delay)
+    const id = window.setTimeout(() => {
+      const next = Math.min(last, index + 1)
+      setIndex(next)
+      if (next >= last) setPlaying(false)
+    }, delay)
     return () => window.clearTimeout(id)
   }, [playing, index, last, warnIndex, days.length])
 
@@ -129,7 +130,7 @@ function Replay({ data }: { data: ReplayResponse }) {
               step={1}
               value={index}
               aria-label={t.slider}
-              aria-valuetext={`${dateWithYear(day.date, lang)}, ${t[day.boond.action]}`}
+              aria-valuetext={`${dateWithYear(day.date, lang)}, ${actionWord(day.boond.action, lang)}`}
               onChange={(e) => scrub(Number(e.target.value))}
             />
           </div>
@@ -261,7 +262,7 @@ function DayPanel({ data, index, t, lang }: { data: ReplayResponse; index: numbe
         <span className="rp-said__label">{t.boondSaid}</span>
         <span className="rp-said__action">
           <ActionIcon action={action} size={26} />
-          {t[action]}
+          {actionWord(action, lang)}
           {d.boond.depth_mm > 0 && <span className="rp-said__depth">{fill(t.mm, { v: num(d.boond.depth_mm, lang) })}</span>}
         </span>
       </div>

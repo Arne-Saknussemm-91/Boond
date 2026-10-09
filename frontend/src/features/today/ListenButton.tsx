@@ -38,16 +38,15 @@ export default function ListenButton({
   const [failed, setFailed] = useState<false | 'error' | 'no-voice'>(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Stop anything playing when the language or advice changes, or on unmount.
+  // Stop anything playing on unmount. The parent keys this component by language and
+  // advice, so a change there remounts it with fresh state.
   useEffect(() => {
-    setPlaying(false)
-    setFailed(false)
     return () => {
       audioRef.current?.pause()
       audioRef.current = null
       if (speechAvailable()) window.speechSynthesis.cancel()
     }
-  }, [url, text, lang])
+  }, [])
 
   // Some browsers load voices late; touching getVoices() early warms the list.
   useEffect(() => {

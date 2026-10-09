@@ -2,7 +2,8 @@ import { useState } from 'react'
 import type { FarmerReport, HistoryDay, Lang } from '../../types'
 import { fill, useLang, useStrings, type Strings } from '../../i18n'
 import { num, parseDate } from '../../format'
-import { ActionIcon, actionColor, actionTint, actionWord } from './actions'
+import { ACTION_COLOR, ACTION_TINT, actionWord } from '../../actions'
+import ActionIcon from '../../components/ActionIcon'
 import './history.css'
 
 const SHOW_FIRST = 7
@@ -136,7 +137,7 @@ export default function HistorySection({ history }: { history: HistoryDay[] }) {
             <li key={d.date} className={quiet ? 'hist__day hist__day--quiet' : 'hist__day'} data-action={d.action}>
               <span
                 className="hist__node"
-                style={{ color: actionColor[d.action], background: actionTint[d.action] }}
+                style={{ color: ACTION_COLOR[d.action], background: ACTION_TINT[d.action] }}
               >
                 <ActionIcon action={d.action} size={quiet ? 16 : 22} />
               </span>
@@ -149,8 +150,8 @@ export default function HistorySection({ history }: { history: HistoryDay[] }) {
                 </p>
 
                 <p className="hist__head">
-                  <span className="hist__word" style={{ color: actionColor[d.action] }}>
-                    {actionWord[d.action][lang]}
+                  <span className="hist__word" style={{ color: ACTION_COLOR[d.action] }}>
+                    {actionWord(d.action, lang)}
                   </span>
                   {hasDepth && <span className="hist__depth">{fill(t.depth, { mm: num(d.depth_mm, lang) })}</span>}
                 </p>

@@ -67,11 +67,6 @@ export const strings: Strings<{
   FLOWERING: string
   GRAIN_FILLING: string
   MATURITY: string
-
-  IRRIGATE: string
-  SKIP: string
-  WAIT: string
-  HEAT_PROTECTION: string
 }> = {
   hi: {
     title: '2021–22 का असली मौसम, बूँद की सलाह के साथ',
@@ -81,13 +76,13 @@ export const strings: Strings<{
     weatherLabel: 'मौसम कहाँ से',
     baselineLabel: 'किससे तुलना',
     howTo:
-      'स्लाइडर खिसकाकर कोई भी दिन चुनें। नीली रेखा वह खेत है जिसने बूँद की सलाह मानी, सलेटी रेखा वह जिसमें तय तारीख़ों पर पानी दिया गया। रेखा भूरी पट्टी में उतरे तो फ़सल प्यासी है।',
+      'स्लाइडर खिसकाकर कोई भी दिन चुनें। नीली रेखा वह खेत है जिसने बूँद की सलाह मानी, सलेटी रेखा वह जिसमें तय तारीख़ों पर पानी दिया गया। कोई रेखा दबाव-रेखा के नीचे भूरी पट्टी में उतरे तो फ़सल प्यासी है।',
     limits:
       'ध्यान दें: इस जाँच में आगे का मौसम वही माना गया जो सच में हुआ, असली पूर्वानुमान इतना सटीक नहीं होता। पानी, बिजली और CO₂e के आँकड़े मॉडल के अनुमान हैं, खेत में नापे नहीं गए।',
 
     boond: 'बूँद की सलाह',
     baseline: 'तय तारीख़ों पर पानी',
-    stressLine: 'इससे नीचे फ़सल प्यासी',
+    stressLine: 'दबाव-रेखा: इससे नीचे फ़सल प्यासी',
     heatLimit: 'फूल और दाने के समय गर्मी की हद',
     chartTitle: 'मिट्टी में बचा पानी',
     chartSummary:
@@ -143,11 +138,6 @@ export const strings: Strings<{
     FLOWERING: 'बालियाँ और फूल',
     GRAIN_FILLING: 'दाना भरना',
     MATURITY: 'पकना',
-
-    IRRIGATE: 'पानी दें',
-    SKIP: 'आज पानी न दें',
-    WAIT: 'अभी रुकें',
-    HEAT_PROTECTION: 'गर्मी से बचाव',
   },
   en: {
     title: 'The real 2021–22 season, replayed with Boond',
@@ -157,13 +147,13 @@ export const strings: Strings<{
     weatherLabel: 'Weather from',
     baselineLabel: 'Compared with',
     howTo:
-      'Move the slider to pick any day. The blue line is the field that followed Boond, the grey line the field watered on fixed dates. When a line drops into the brown band, the crop is thirsty.',
+      'Move the slider to pick any day. The blue line is the field that followed Boond, the grey line the field watered on fixed dates. When a line drops below the stress line into the brown band, the crop is thirsty.',
     limits:
       'Limits: in this replay the forecast is the weather that actually happened, so real forecasts will be less exact. Water, power and CO₂e figures are model estimates, not field measurements.',
 
     boond: 'Boond advice',
     baseline: 'Fixed dates',
-    stressLine: 'Below this the crop is thirsty',
+    stressLine: 'Stress line: below it the crop is thirsty',
     heatLimit: 'Heat limit at flowering and grain fill',
     chartTitle: 'Water left in the soil',
     chartSummary:
@@ -219,11 +209,6 @@ export const strings: Strings<{
     FLOWERING: 'Heading and flowering',
     GRAIN_FILLING: 'Grain filling',
     MATURITY: 'Ripening',
-
-    IRRIGATE: 'Water today',
-    SKIP: 'Skip watering',
-    WAIT: 'Wait',
-    HEAT_PROTECTION: 'Heat protection',
   },
 }
 

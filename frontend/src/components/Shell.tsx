@@ -41,7 +41,7 @@ export default function Shell({ route, children }: { route: Route; children: Rea
   return (
     <div className="shell">
       <header className="shell__bar">
-        <a className="shell__brand" href={fieldHref} aria-label="Boond">
+        <a className="shell__brand" href={fieldHref}>
           <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
             <path d="M16 3C16 3 6 15 6 21a10 10 0 0 0 20 0C26 15 16 3 16 3z" fill="currentColor" />
           </svg>

@@ -1,32 +1,29 @@
-# React + TypeScript + Vite
+# Boond dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Mobile-first, Hindi-first, read-only dashboard for one field (Live Build Spec section 9). The bot's `/link` command opens `#/f/<token>`.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev          # http://localhost:5173
+npm run build        # outputs dist/ for Amplify Hosting
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Data
+- With `VITE_API_BASE` unset, the app reads `public/mock/`. The mocks come from real 2021-22 Ludhiana weather (Open-Meteo archive) run through a simplified FAO-56 wheat balance in `scripts/make_mocks.py`, with the PAU fixed schedule as the baseline. They are test fields, labelled as such.
+- With `VITE_API_BASE=https://<api-id>.execute-api.<region>.amazonaws.com/prod`, it calls `GET /field/{token}` and `GET /replay`. Response shapes are in `src/types.ts`; the backend must match them.
+
+Regenerate and check the mocks (offline, uses the cached weather):
+```bash
+python3 -I scripts/make_mocks.py
+python3 -I scripts/validate_mocks.py
+```
+
+## Routes
+| Route | Shows |
+|---|---|
+| `#/f/demo` | Heat protection day (27 Mar 2022) |
+| `#/f/irrigate`, `#/f/skip`, `#/f/wait`, `#/f/heat` | One test field per action |
+| `#/f/waiting` | Field not sown yet |
+| `#/replay` | 2021-22 season replay: Boond vs PAU fixed schedule |
+
+Add `?lang=en` for English. Design rules are in `DESIGN.md`.

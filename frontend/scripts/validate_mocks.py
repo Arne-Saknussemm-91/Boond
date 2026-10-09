@@ -199,8 +199,32 @@ def validate_replay(r):
     return {d['date']: d for d in days}
 
 
-def validate_field(name, f, replay_by_date):
+def skip_is_safe(t, out, w):
+    """Safety rule: never skip if D would cross RAW before the rain arrives, and the
+    rain must be real (>= 5 mm at >= 70%) and refill a good share of the deficit."""
+    rain = next((i for i, o in enumerate(out[:3]) if o['rain_mm'] >= 5 and o['rain_prob_pct'] >= 70), None)
+    if rain is None and t['rain_next_3d_mm'] < 5:
+        err(w, 'SKIP without >= 5 mm of likely rain in the next 3 days')
+        return
+    if t['depletion_mm'] > t['raw_mm']:
+        err(w, 'SKIP while already below the stress line')
+    stop = rain if rain is not None else 0
+    for i, o in enumerate(out[:stop]):
+        if o['depletion_mm'] > o['raw_mm']:
+            err(f'{w}.outlook[{i}]', 'SKIP but D crosses RAW before the rain arrives')
+    for i, o in enumerate(out[:7]):
+        if o['depletion_mm'] > o['raw_mm']:
+            err(f'{w}.outlook[{i}]', 'SKIP but D crosses RAW within a week')
+    spell = sum(o['rain_mm'] for o in out[:7])
+    if spell < 0.5 * t['depletion_mm']:
+        err(w, f'SKIP but the week\'s rain {spell:.1f} mm covers < half the deficit')
+
+
+def validate_field(name, f, replay_by_date, replay_sowing):
     w = name
+    # Cross-check actions and heat windows only for the replayed field; other test fields
+    # share the weather but not the crop calendar or soil state.
+    same_field = f['field']['sowing_date'] == replay_sowing
     check(f, {'field': obj(FIELD), 'today': lambda v, x: None, 'outlook': lambda v, x: None,
               'history': lambda v, x: None}, w)
     if not f['field'].get('is_test'):
@@ -226,10 +250,12 @@ def validate_field(name, f, replay_by_date):
         err(w, 'kwh inconsistent')
     text_numbers_ok(t['advice_text'], [v for v in t.values() if is_num(v)], f'{w}.today')
     rd = replay_by_date.get(t['date'])
-    if rd and rd['boond']['action'] != t['action']:
+    if same_field and rd and rd['boond']['action'] != t['action']:
         err(w, f'today action {t["action"]} != replay {rd["boond"]["action"]}')
 
     out = f['outlook']
+    if t['action'] == 'SKIP':
+        skip_is_safe(t, out, w)
     arr(obj(OUTLOOK))(out, f'{w}.outlook')
     if len(out) != 16:
         err(w, f'outlook has {len(out)} days, want 16')
@@ -242,7 +268,7 @@ def validate_field(name, f, replay_by_date):
         if not 0 <= o['rain_prob_pct'] <= 100:
             err(f'{w}.outlook[{i}]', 'rain_prob_pct out of range')
         rd = replay_by_date.get(o['date'])
-        if rd and rd['heat_threshold_c'] != o['heat_threshold_c']:
+        if same_field and rd and rd['heat_threshold_c'] != o['heat_threshold_c']:
             err(f'{w}.outlook[{i}]', 'heat_threshold_c disagrees with replay')
 
     hist = f['history']
@@ -258,7 +284,7 @@ def validate_field(name, f, replay_by_date):
         rd = replay_by_date.get(h['date'])
         allowed = [h['depth_mm'], h['water_wallet_pct']]
         if rd:
-            if rd['boond']['action'] != h['action'] or rd['boond']['depth_mm'] != h['depth_mm']:
+            if same_field and (rd['boond']['action'] != h['action'] or rd['boond']['depth_mm'] != h['depth_mm']):
                 err(hw, 'history disagrees with replay')
             i0 = list(replay_by_date).index(h['date'])
             nxt = list(replay_by_date.values())[i0:i0 + 3]
@@ -287,7 +313,7 @@ def main():
             continue
         with open(os.path.join(MOCK, fn), encoding='utf-8') as fh:
             f = json.load(fh)
-        n = validate_field(fn, f, by_date)
+        n = validate_field(fn, f, by_date, replay['sowing_date'])
         t = f['today']
         summary.append(f'{fn}: ' + (f"{t['date']} {t['action']} {t['depth_mm']} mm, "
                                     f"wallet {t['water_wallet_pct']}%, {n} reports"

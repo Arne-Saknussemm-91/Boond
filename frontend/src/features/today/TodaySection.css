@@ -310,7 +310,7 @@
   flex-direction: column;
   padding-left: var(--s2);
   font-size: var(--step--1);
-  line-height: 1.25;
+  line-height: 1.35; /* room for Devanagari matras on two-line labels */
   color: var(--ink-soft);
 }
 
@@ -329,6 +329,10 @@
 .wallet__label--level > span:last-child {
   color: var(--ink);
   font-weight: 500;
+}
+
+.wallet__label--stress .wallet__label-strong {
+  color: var(--stress);
 }
 
 .wallet__label--after .wallet__label-strong {
@@ -398,9 +402,16 @@
 }
 
 .wallet__stress {
-  stroke: var(--ink);
-  stroke-width: 2;
-  stroke-dasharray: 7 4;
+  stroke: var(--stress);
+  stroke-width: var(--stress-width);
+  stroke-dasharray: var(--stress-dash);
+}
+
+/* a pale halo under the dashes so the line reads over water and soil alike */
+.wallet__stress-halo {
+  stroke: var(--surface);
+  stroke-width: 5;
+  opacity: 0.85;
 }
 
 .wallet__leader {
@@ -415,9 +426,9 @@
 }
 
 .wallet__leader--stress {
-  stroke: var(--ink);
-  stroke-width: 2;
-  stroke-dasharray: 7 4;
+  stroke: var(--stress);
+  stroke-width: var(--stress-width);
+  stroke-dasharray: var(--stress-dash);
 }
 
 .wallet__leader--after {

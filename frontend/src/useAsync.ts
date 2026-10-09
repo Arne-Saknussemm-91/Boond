@@ -2,19 +2,20 @@ import { useEffect, useState } from 'react'
 
 export type AsyncState<T> = { status: 'loading' } | { status: 'error'; error: Error } | { status: 'ready'; data: T }
 
-export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): AsyncState<T> {
-  const [state, setState] = useState<AsyncState<T>>({ status: 'loading' })
+// Load data for one key, e.g. useAsync(fetchField, token). `load` must be a stable
+// (module-level) function. While a new key is loading the previous result is not
+// shown: the state is "loading" until the result for this key arrives.
+export function useAsync<T>(load: (key: string) => Promise<T>, key = ''): AsyncState<T> {
+  const [result, setResult] = useState<{ key: string; state: AsyncState<T> } | null>(null)
   useEffect(() => {
     let live = true
-    setState({ status: 'loading' })
-    load().then(
-      (data) => live && setState({ status: 'ready', data }),
-      (error: Error) => live && setState({ status: 'error', error }),
+    load(key).then(
+      (data) => live && setResult({ key, state: { status: 'ready', data } }),
+      (error: Error) => live && setResult({ key, state: { status: 'error', error } }),
     )
     return () => {
       live = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps)
-  return state
+  }, [load, key])
+  return result && result.key === key ? result.state : { status: 'loading' }
 }

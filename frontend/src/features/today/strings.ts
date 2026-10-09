@@ -2,12 +2,6 @@ import type { Strings } from '../../i18n'
 
 // Every visible string of the Today hero. Hindi in village register first.
 export const strings: Strings<{
-  // Action words (the decision)
-  act_IRRIGATE: string
-  act_SKIP: string
-  act_WAIT: string
-  act_HEAT_PROTECTION: string
-  heat_qualifier: string
 
   // Second line under the action word
   mm: string
@@ -88,12 +82,6 @@ export const strings: Strings<{
   waiting_aria: string
 }> = {
   hi: {
-    act_IRRIGATE: 'आज पानी दें',
-    act_SKIP: 'आज पानी न दें',
-    act_WAIT: 'अभी रुकें',
-    act_HEAT_PROTECTION: 'हल्का पानी दें',
-    heat_qualifier: 'गर्मी से बचाव',
-
     mm: 'मिमी',
     amount_rain_post: 'बारिश, अगले 3 दिन में',
     amount_wait_pre: 'अगला पानी लगभग',
@@ -101,10 +89,10 @@ export const strings: Strings<{
     amount_wait_day: '{n} दिन बाद',
     no_pump_today: 'आज पंप चलाने की ज़रूरत नहीं',
 
-    reason_CROSSES_RAW_TODAY: 'मिट्टी की नमी आज दबाव की रेखा से नीचे जा रही है।',
-    reason_CROSSES_RAW_TOMORROW: 'कल तक मिट्टी की नमी दबाव की रेखा से नीचे चली जाएगी।',
-    reason_CROSSES_RAW_IN: '{n} दिन में मिट्टी की नमी दबाव की रेखा से नीचे चली जाएगी।',
-    reason_BELOW_RAW: 'मिट्टी की नमी दबाव की रेखा से नीचे है, फ़सल प्यासी है।',
+    reason_CROSSES_RAW_TODAY: 'मिट्टी की नमी आज दबाव-रेखा से नीचे जा रही है।',
+    reason_CROSSES_RAW_TOMORROW: 'कल तक मिट्टी की नमी दबाव-रेखा से नीचे चली जाएगी।',
+    reason_CROSSES_RAW_IN: '{n} दिन में मिट्टी की नमी दबाव-रेखा से नीचे चली जाएगी।',
+    reason_BELOW_RAW: 'मिट्टी की नमी दबाव-रेखा से नीचे है, फ़सल प्यासी है।',
     reason_RAIN_COVERS: 'अगले 3 दिन में {mm} मिमी बारिश की पक्की उम्मीद है, उतना पानी काफ़ी है।',
     reason_HEALTHY: 'जड़ों के पास अभी काफ़ी नमी है।',
     reason_HEAT_FLOWERING: 'बालियाँ निकल रही हैं और तेज़ गर्मी आने वाली है।',
@@ -146,12 +134,12 @@ export const strings: Strings<{
 
     wallet_title: 'जड़ों में पानी',
     wallet_left: 'पानी बचा है',
-    wallet_stress: 'दबाव की रेखा',
-    wallet_stress_note: 'इससे नीचे फ़सल पर दबाव',
+    wallet_stress: 'दबाव-रेखा',
+    wallet_stress_note: 'इससे नीचे फ़सल प्यासी',
     wallet_roots: 'जड़ें {m} मीटर तक',
     wallet_after: 'पानी देने के बाद',
     wallet_aria:
-      'मिट्टी का कटा हुआ हिस्सा। जड़ें {m} मीटर तक हैं। जड़ों के पास {pct}% पानी बचा है। दबाव की रेखा {stress}% पर है।',
+      'मिट्टी का कटा हुआ हिस्सा। जड़ें {m} मीटर तक हैं। जड़ों के पास {pct}% पानी बचा है। दबाव-रेखा {stress}% पर है।',
     wallet_aria_IRRIGATE: 'पानी इस रेखा से नीचे जाने से पहले सिंचाई करें।',
     wallet_aria_SKIP: 'आने वाली बारिश इसे फिर भर देगी।',
     wallet_aria_WAIT: 'पानी अभी रेखा से ऊपर है।',
@@ -166,12 +154,6 @@ export const strings: Strings<{
     waiting_aria: 'मिट्टी का कटा हुआ हिस्सा, पूरी नमी के साथ। मान रहे हैं कि बुवाई से पहले पलेवा हुआ है।',
   },
   en: {
-    act_IRRIGATE: 'Water today',
-    act_SKIP: 'Don’t water today',
-    act_WAIT: 'Wait for now',
-    act_HEAT_PROTECTION: 'Water lightly',
-    heat_qualifier: 'Heat protection',
-
     mm: 'mm',
     amount_rain_post: 'of rain in the next 3 days',
     amount_wait_pre: 'Next watering in about',
@@ -225,7 +207,7 @@ export const strings: Strings<{
     wallet_title: 'Water at the roots',
     wallet_left: 'water left',
     wallet_stress: 'Stress line',
-    wallet_stress_note: 'Below this the crop suffers',
+    wallet_stress_note: 'Below this the crop is thirsty',
     wallet_roots: 'Roots reach {m} m',
     wallet_after: 'After watering',
     wallet_aria:

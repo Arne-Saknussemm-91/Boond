@@ -6,7 +6,7 @@ import './outlook.css'
 
 // Rain that counts as "arriving": enough to refill some of the root zone and likely.
 const RAIN_MIN_MM = 5
-const RAIN_MIN_PROB = 50
+const RAIN_MIN_PROB = 70 // same thresholds as the engine's skip rule (scripts/make_mocks.py)
 
 const strings: Strings<{
   heading: string
@@ -70,7 +70,7 @@ const strings: Strings<{
     full: 'पूरा भरा',
     stressLine: 'दबाव-रेखा',
     legendWater: 'खेत में बचा पानी',
-    legendStress: 'दबाव-रेखा: इसके नीचे फ़सल को पानी की कमी',
+    legendStress: 'दबाव-रेखा: इससे नीचे फ़सल प्यासी',
     legendRain: 'बारिश, गहरा रंग यानी पक्की संभावना',
     legendHeat: 'ज़्यादा गर्मी',
     hint: 'किसी दिन पर टैप करें',
@@ -113,7 +113,7 @@ const strings: Strings<{
     full: 'Full',
     stressLine: 'Stress line',
     legendWater: 'Water left in the field',
-    legendStress: 'Stress line: below it the crop is short of water',
+    legendStress: 'Stress line: below it the crop is thirsty',
     legendRain: 'Rain, darker means more likely',
     legendHeat: 'Too hot',
     hint: 'Tap a day',

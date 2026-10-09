@@ -2429,7 +2429,7 @@
    "heat_threshold_c": 31.0,
    "boond": {
     "depletion_mm": 72.1,
-    "action": "SKIP",
+    "action": "WAIT",
     "depth_mm": 0,
     "ks": 1
    },

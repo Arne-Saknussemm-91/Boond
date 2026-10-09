@@ -53,17 +53,25 @@
   display: inline-flex;
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  /* no overflow:hidden here: it would clip the buttons' focus rings */
 }
 
 .shell__lang button {
   background: transparent;
   border: 0;
   padding: 0 var(--s3);
-  min-height: 40px;
+  min-height: var(--tap);
   min-width: var(--tap);
   cursor: pointer;
   color: var(--ink-soft);
+}
+
+.shell__lang button:first-child {
+  border-radius: calc(var(--radius-sm) - 1px) 0 0 calc(var(--radius-sm) - 1px);
+}
+
+.shell__lang button:last-child {
+  border-radius: 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 0;
 }
 
 .shell__lang button[aria-pressed='true'] {
@@ -96,7 +104,8 @@
 }
 
 .shell__foot p {
-  max-width: var(--page-max);
+  /* line up with the content column above (page-max minus its gutters) */
+  max-width: calc(var(--page-max) - 2 * var(--gutter));
   margin: 0 auto;
 }
 

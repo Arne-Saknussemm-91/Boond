@@ -159,7 +159,12 @@ export default function SoilColumn({
           <rect x={COL_L} y={SURFACE} width={COL_R - COL_L} height="5" className="wallet__crust" />
         </g>
 
-        {stressY !== null && <line x1={COL_L} x2={COL_R} y1={stressY} y2={stressY} className="wallet__stress" />}
+        {stressY !== null && (
+          <g>
+            <line x1={COL_L} x2={COL_R} y1={stressY} y2={stressY} className="wallet__stress-halo" />
+            <line x1={COL_L} x2={COL_R} y1={stressY} y2={stressY} className="wallet__stress" />
+          </g>
+        )}
 
         <Plant stage={stage} />
 

@@ -1,8 +1,5 @@
-/* 2021–22 replay page. All colours come from tokens.css; the one local value is
-   the de-emphasised grey for the fixed-date field, validated against --surface. */
+/* 2021–22 replay page. All colours come from tokens.css. */
 .rp {
-  --rp-base: #76837d; /* fixed-date field: quiet comparison line */
-  --rp-base-tint: #e2e7e4;
   display: grid;
   gap: var(--s7);
   min-width: 0;
@@ -54,6 +51,11 @@
 .rp-meta dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.rp-meta a {
+  /* a bigger tap area for the source links without moving the text */
+  padding-block: 12px;
 }
 
 .rp-meta__desc {
@@ -113,7 +115,7 @@
 }
 
 .rp-key--base {
-  background: var(--rp-base);
+  background: var(--baseline);
 }
 
 .rp-key--band {
@@ -121,7 +123,7 @@
   width: 16px;
   border-radius: 0;
   background: var(--mitti-tint);
-  border-top: 1.5px solid var(--mitti);
+  border-top: 2px dashed var(--stress);
 }
 
 .rp-key--limit {
@@ -169,8 +171,9 @@
 
 .rp-stress {
   fill: none;
-  stroke: var(--mitti);
-  stroke-width: 1.5;
+  stroke: var(--stress);
+  stroke-width: var(--stress-width);
+  stroke-dasharray: var(--stress-dash);
 }
 
 .rp-band__label {
@@ -192,7 +195,7 @@
 }
 
 .rp-line--base {
-  stroke: var(--rp-base);
+  stroke: var(--baseline);
 }
 
 .rp-dot {
@@ -211,12 +214,11 @@
 }
 
 .rp-dot--base {
-  fill: var(--rp-base);
+  fill: var(--baseline);
 }
 
 .rp-rain {
-  fill: var(--nehar);
-  opacity: 0.6;
+  fill: var(--rain);
 }
 
 .rp-temp {
@@ -269,7 +271,7 @@
 }
 
 .rp-cursor__dot--base {
-  fill: var(--rp-base);
+  fill: var(--baseline);
 }
 
 .rp-cursor__dot--temp {
@@ -576,7 +578,7 @@
 }
 
 .rp-meter--base .rp-meter__track {
-  background: var(--rp-base-tint);
+  background: var(--baseline-tint);
 }
 
 .rp-meter__fill {
@@ -590,7 +592,7 @@
 }
 
 .rp-meter--base .rp-meter__fill {
-  background: var(--rp-base);
+  background: var(--baseline);
 }
 
 .rp-meter__stress {
@@ -675,7 +677,7 @@
 }
 
 .rp-pair__fill--base {
-  background: var(--rp-base);
+  background: var(--baseline);
 }
 
 .rp-pair__val {
