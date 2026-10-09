@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import type { Route } from '../App'
 import { useLang, useStrings, type Strings } from '../i18n'
-import { usingMocks } from '../api'
+import { isMockToken, savedToken } from '../api'
 import './Shell.css'
 
 const strings: Strings<{
   brand: string
   field: string
+  register: string
   replay: string
   nav: string
   lang: string
@@ -16,6 +17,7 @@ const strings: Strings<{
   hi: {
     brand: 'बूँद',
     field: 'मेरा खेत',
+    register: 'खेत जोड़ें',
     replay: '2021–22 की जाँच',
     nav: 'मुख्य',
     lang: 'भाषा',
@@ -25,6 +27,7 @@ const strings: Strings<{
   en: {
     brand: 'Boond',
     field: 'My field',
+    register: 'Add field',
     replay: '2021–22 check',
     nav: 'Main',
     lang: 'Language',
@@ -36,7 +39,10 @@ const strings: Strings<{
 export default function Shell({ route, children }: { route: Route; children: ReactNode }) {
   const t = useStrings(strings)
   const { lang, setLang } = useLang()
-  const fieldHref = route.name === 'field' ? `#/f/${encodeURIComponent(route.token)}` : '#/f/demo'
+  const mine = savedToken()
+  const fieldHref =
+    route.name === 'field' ? `#/f/${encodeURIComponent(route.token)}` : mine ? `#/f/${encodeURIComponent(mine)}` : '#/f/demo'
+  const showingSample = route.name === 'field' && isMockToken(route.token)
 
   return (
     <div className="shell">
@@ -50,6 +56,9 @@ export default function Shell({ route, children }: { route: Route; children: Rea
         <nav className="shell__nav" aria-label={t.nav}>
           <a href={fieldHref} aria-current={route.name === 'field' ? 'page' : undefined}>
             {t.field}
+          </a>
+          <a href="#/register" aria-current={route.name === 'register' ? 'page' : undefined}>
+            {t.register}
           </a>
           <a href="#/replay" aria-current={route.name === 'replay' ? 'page' : undefined}>
             {t.replay}
@@ -65,7 +74,7 @@ export default function Shell({ route, children }: { route: Route; children: Rea
         </div>
       </header>
 
-      {usingMocks && <p className="shell__mock">{t.mock}</p>}
+      {showingSample && <p className="shell__mock">{t.mock}</p>}
 
       <main className="shell__main">{children}</main>
 

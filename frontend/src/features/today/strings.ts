@@ -24,6 +24,7 @@ export const strings: Strings<{
 
   // Identity line
   test_field: string
+  my_field: string
   generated: string
   stale: string
 
@@ -74,6 +75,8 @@ export const strings: Strings<{
 
   // Waiting (not sown yet)
   waiting_title: string
+  waiting_first_title: string
+  waiting_first_body: string
   waiting_body: string
   waiting_days: string
   waiting_today: string
@@ -145,7 +148,10 @@ export const strings: Strings<{
     wallet_aria_WAIT: 'पानी अभी रेखा से ऊपर है।',
     wallet_aria_HEAT_PROTECTION: 'हल्का पानी गर्मी में फ़सल को ठंडा रखेगा।',
 
+    my_field: 'मेरा गेहूँ का खेत, {area} एकड़',
     waiting_title: 'बुवाई {date} को है',
+    waiting_first_title: 'पहली सलाह कल सुबह 6 बजे',
+    waiting_first_body: 'बुवाई {date} को हुई। हर सुबह मौसम देखकर बताएँगे कि पानी देना है या नहीं।',
     waiting_body: 'उस दिन से हर सुबह 6 बजे सलाह मिलेगी।',
     waiting_days: 'बुवाई में {n} दिन बाकी',
     waiting_today: 'बुवाई आज है',
@@ -217,7 +223,10 @@ export const strings: Strings<{
     wallet_aria_WAIT: 'The water is still above the stress line.',
     wallet_aria_HEAT_PROTECTION: 'A light watering keeps the crop cool in the heat.',
 
+    my_field: 'My wheat field, {area} acres',
     waiting_title: 'Sowing is on {date}',
+    waiting_first_title: 'First advice tomorrow at 6 am',
+    waiting_first_body: 'Sown on {date}. Every morning we check the weather and tell you whether to water.',
     waiting_body: 'From that day you get advice every morning at 6.',
     waiting_days: '{n} days to sowing',
     waiting_today: 'Sowing is today',

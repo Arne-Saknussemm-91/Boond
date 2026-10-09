@@ -226,7 +226,7 @@ function Identity({ field, t, lang, generatedAt }: { field: FieldProfile; t: Tod
   return (
     <div className="today__id">
       <p className="today__field">
-        <span className="today__field-name">{field.label}</span>
+        <span className="today__field-name">{field.label || fill(t.my_field, { area: num(field.area_acres, lang, 1) })}</span>
         {field.is_test && <span className="today__badge">{t.test_field}</span>}
       </p>
       <p className="today__meta">
@@ -307,9 +307,11 @@ function Waiting({ field, t, lang }: { field: FieldProfile; t: TodayStrings; lan
       <div className="today__grid">
         <div className="today__decision">
           <h1 id="today-h" className="today__waiting-title">
-            {fill(t.waiting_title, { date: fullDate(field.sowing_date, lang) })}
+            {days < 0 ? t.waiting_first_title : fill(t.waiting_title, { date: fullDate(field.sowing_date, lang) })}
           </h1>
-          <p className="today__reason">{t.waiting_body}</p>
+          <p className="today__reason">
+            {days < 0 ? fill(t.waiting_first_body, { date: fullDate(field.sowing_date, lang) }) : t.waiting_body}
+          </p>
           {days >= 0 && (
             <p className="today__countdown">
               <span>{days === 0 ? t.waiting_today : fill(t.waiting_days, { n: num(days, lang) })}</span>

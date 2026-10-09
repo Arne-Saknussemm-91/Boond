@@ -176,7 +176,7 @@ function buildPoints(today: Today, outlook: OutlookDay[]): Point[] {
       taw: d.taw_mm,
       below: d.depletion_mm > d.raw_mm,
       day: d,
-      heat: d.heat_threshold_c != null && d.tmax_c >= d.heat_threshold_c,
+      heat: d.heat_threshold_c != null && d.tmax_c != null && d.tmax_c >= d.heat_threshold_c,
     })),
   ]
 }
@@ -532,7 +532,7 @@ export default function OutlookSection({ today, outlook }: { today: Today; outlo
                 </dd>
               </div>
             )}
-            {sp.day && (
+            {sp.day && sp.day.tmax_c != null && (
               <div>
                 <dt>{t.tmax}</dt>
                 <dd>
@@ -604,7 +604,7 @@ export default function OutlookSection({ today, outlook }: { today: Today; outlo
               <td>{p.below ? t.yes : t.no}</td>
               <td>{p.day ? num(p.day.rain_mm, lang, 1) : ''}</td>
               <td>{p.day ? `${num(p.day.rain_prob_pct, lang)}%` : ''}</td>
-              <td>{p.day ? `${num(p.day.tmax_c, lang)}°C` : ''}</td>
+              <td>{p.day?.tmax_c != null ? `${num(p.day.tmax_c, lang)}°C` : ''}</td>
             </tr>
           ))}
         </tbody>

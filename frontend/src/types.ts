@@ -53,8 +53,8 @@ export interface Today extends EngineDay {
 
 export interface OutlookDay {
   date: string
-  tmax_c: number
-  tmin_c: number
+  tmax_c: number | null // null when the backend reports no daily temperature
+  tmin_c: number | null
   rain_mm: number
   rain_prob_pct: number
   et0_mm: number
