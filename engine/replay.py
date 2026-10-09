@@ -15,7 +15,7 @@ import math
 from datetime import date, timedelta
 from pathlib import Path
 
-from engine.data import get_crop, load_json
+from engine.data import add_profile_arguments, get_crop, load_json, profile_from_arguments
 from engine.paddy import LOW_POND_MM
 from engine.simulate import boond_policy, simulate_season
 
@@ -254,17 +254,18 @@ def replay(weather, crop, sow_date, soil, rain_probability=None, forecast=None):
     }
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--weather", required=True)
-    parser.add_argument("--crop", default="wheat")
+    add_profile_arguments(parser)
     parser.add_argument("--sow", required=True, type=date.fromisoformat)
     parser.add_argument("--soil", default="loam")
     parser.add_argument("--rain-probability", type=float, default=None,
                         help="trust forecast rain at this probability (default: not trusted)")
     parser.add_argument("--forecast", help="archived forecast file (historical-forecast)")
     parser.add_argument("--out-dir", default="replay/out")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    crop = profile_from_arguments(args)
 
     with open(args.weather, "r") as file:
         weather = json.load(file)
@@ -275,20 +276,23 @@ def main():
         with open(args.forecast, "r") as file:
             forecast = json.load(file)
 
-    result = replay(weather, args.crop, args.sow, args.soil, args.rain_probability, forecast)
+    result = replay(weather, crop, args.sow, args.soil, args.rain_probability, forecast)
+    result["profile"] = crop
 
-    out = Path(args.out_dir) / f"replay_{args.crop}_{args.soil}.json"
+    out = Path(args.out_dir) / f"replay_{crop}_{args.soil}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2))
 
     print(json.dumps(
         {key: result[key] for key in (
-            "boond_rain_probability", "boond_forecast",
+            "profile", "boond_rain_probability", "boond_forecast",
             "boond", "baseline", "boond_minus_baseline"
         )},
         indent=2
     ))
     print(f"Saved {out}")
+
+    return result
 
 
 if __name__ == "__main__":

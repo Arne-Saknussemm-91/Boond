@@ -70,3 +70,10 @@ def test_boond_has_no_upland_stress_days_on_any_soil():
 
         for soil in ("sandy", "loam", "clay"):
             assert replay(WEATHER, crop, sowing, soil)["boond"]["stress_days"] == 0, (crop, soil)
+
+
+def test_wheat_seasonal_water_use_is_in_the_sanity_range():
+    # crops.json wheat.validation_targets: 280-450 mm stress-free ETc.
+    result = replay(WEATHER, "wheat", date(2021, 11, 5), "loam")
+
+    assert 280 <= result["boond"]["seasonal_etc_mm"] <= 450

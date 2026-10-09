@@ -8,7 +8,7 @@ Boond's engine is the FAO-56 water balance (spec section 6). It is deterministic
 
 Real field data is still used in two places:
 
-- **Validation:** the 2021-22 replay, compared with a baseline schedule from PAU's published recommendations (`replay/baseline.json`).
+- **Validation:** the 2021-22 replay, compared with a baseline schedule from PAU's published recommendations (`engine/baseline.json`).
 - **Correction:** farmer check-ins (`I watered`, `It rained`) adjust the water balance as the season runs.
 
 If you later add a learned component (beyond this hackathon), the targets in `validation_targets` and the `kc_local_measured` blocks are the place to start calibrating.
@@ -20,8 +20,8 @@ If you later add a learned component (beyond this hackathon), the targets in `va
 | `engine/crops.json` | your crops.json | 8 crop profiles, Punjab stage lengths, heat windows with day ranges, root-growth day, per-crop irrigation depths, paddy pond rules, seasonal sanity targets |
 | `engine/soils.json` | your soils.json | Same 3 farmer soils with unchanged values, plus REW/TEW, paddy percolation, Hindi labels, 5 extra texture classes, a SoilGrids suggestion rule |
 | `engine/config.json` | your config.json | Same keys, cited or justified values, plus check-in rain values, CEA 2025-26 emission factor, Kc climate adjustment switch |
-| `replay/baseline.json` | new | PAU/CICR/TNAU calendar schedules for all 4 crops, including PAU's rain-delay rule for wheat |
-| `tools/check_data.py` | new | Checks structure and prints TAW/RAW and Kc tables. Optionally computes seasonal ETc from a cached Open-Meteo file |
+| `engine/baseline.json` | new | PAU/CICR/TNAU calendar schedules for all 4 crops, including PAU's rain-delay rule for wheat |
+| `engine/check_data.py` | new | Checks structure (`python -m engine.check_data`), prints Kc and TAW/RAW tables with `--tables`, and computes seasonal ETc from a cached weather file with `--weather` |
 
 All existing keys keep their shape: `total_days`, `stages.*.days/kc_start/kc_end`, `heat_thresholds`, `depletion_fraction` and `root_depth.initial_m/maximum_m`. Existing `kc.py` and `water_balance.py` code keeps working. **Ignore every key that starts with `_`**: these hold documentation. Don't list them as crops in the form.
 
@@ -79,7 +79,7 @@ D_today  = clamp(D_yesterday - P_eff - I + Ks x Kc x ET0, 0, TAW)
 
 As roots grow, TAW grows too. Keep D in mm and don't rescale it. The new soil the roots reach is assumed to be at field capacity, which is the standard FAO-56 simplification.
 
-**Kc check:** `tools/check_data.py` has a reference `kc_on_day()` and `root_on_day()`. Make `engine/tests` assert that your `kc.py` returns the same values on days 1, 25, 72 and 145.
+**Kc check:** `engine/tests/test_kc.py` asserts the FAO-56 Eq. 66 values for every crop profile.
 
 ### 4.3 Heat rule, generalised to any crop
 
@@ -156,10 +156,10 @@ Punjab farmers pay nothing for farm power, and Haryana farmers pay 10 paise per 
 ### 4.9 Sanity check after the replay
 
 ```bash
-python tools/check_data.py --weather replay/cache/ludhiana_2021_22.json --crop wheat --sow 2021-11-05
+python -m engine.check_data --weather replay/cache/ludhiana_actual_2021_22.json --crop wheat --sow 2021-11-05
 ```
 
-This prints stress-free seasonal ETc and compares it with `validation_targets`. Expected ranges: wheat 350-450 mm, paddy 450-650 mm (crop ET only), cotton 700-1000 mm, sugarcane 1400-2000 mm. A value far outside the range usually means an ET0 unit or date-offset bug.
+This prints stress-free seasonal ETc and compares it with `validation_targets`. Expected ranges: wheat 280-450 mm (the real 2021-22 Ludhiana season gives 286 mm), paddy 450-650 mm (crop ET only), cotton 700-1000 mm, sugarcane 1400-2000 mm. A value far outside the range usually means an ET0 unit or date-offset bug.
 
 ### 4.10 Which crops can have live fields during the hackathon
 

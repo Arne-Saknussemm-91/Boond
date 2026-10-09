@@ -3,7 +3,7 @@ Download daily weather from Open-Meteo once and save it for the
 season simulator (engine/simulate.py).
 
     python tools/fetch_weather.py --lat 30.90 --lon 75.85 \
-        --start 2021-11-01 --end 2022-04-30 --out weather/ludhiana_2021_22.json
+        --start 2021-11-01 --end 2022-04-30 --out replay/cache/ludhiana_actual_2021_22.json
 
 --source archive             ERA5 reanalysis (what actually happened)
 --source historical-forecast archived forecasts (what the advisor would have seen);

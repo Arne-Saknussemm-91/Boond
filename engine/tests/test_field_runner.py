@@ -253,3 +253,30 @@ def test_paddy_field_advances_with_the_pond_model():
     assert "pond_mm" in result["advice"]
     assert "pond_mm" in result["state"]
     assert len(result["days"]) == 20
+
+
+def test_field_registered_before_sowing_waits_then_starts_on_the_sowing_date():
+    # Registered on 1 Nov for a 5 Nov sowing (spec 4.1: WAITING status).
+    sowing = date(2021, 11, 5)
+    state = dict(start_state(FIELD), last_processed_date="2021-10-31")
+
+    early = advance_field(FIELD, state, None, window(date(2021, 11, 3), 16), [], date(2021, 11, 3))
+
+    assert early["advice"]["status"] == "WAITING"
+    assert early["days"] == []
+    assert early["state"]["last_processed_date"] == "2021-11-02"
+
+    started = advance_field(FIELD, early["state"], observed_between(sowing, date(2021, 11, 6)),
+                            window(date(2021, 11, 7), 16), [], date(2021, 11, 7))
+
+    assert started["advice"]["status"] == "ACTIVE"
+    assert [row["date"] for row in started["days"]] == ["2021-11-05", "2021-11-06"]
+
+
+def test_apply_day_before_sowing_only_moves_the_date():
+    state = start_state(FIELD)
+    new_state, row = apply_day(FIELD, state, date(2021, 11, 1), 3.0, 0.0)
+
+    assert row is None
+    assert new_state["depletion_mm"] == state["depletion_mm"]
+    assert new_state["last_processed_date"] == "2021-11-01"

@@ -118,3 +118,29 @@ def select_profile(crop, sowing_date, variety=None, ratoon=False):
 
     get_crop(crop)
     return crop
+
+
+CROP_FAMILIES = ("wheat", "paddy", "sugarcane")
+
+
+def add_profile_arguments(parser):
+    """--crop / --variety / --ratoon / --exact-profile for the CLIs."""
+    parser.add_argument("--crop", default="wheat",
+                        help="wheat, paddy, cotton, sugarcane, or an exact crops.json profile key")
+    parser.add_argument("--variety", default=None, help="paddy variety, e.g. PR126")
+    parser.add_argument("--ratoon", action="store_true", help="sugarcane ratoon crop")
+    parser.add_argument("--exact-profile", action="store_true",
+                        help="use --crop as the crops.json key without choosing by sowing date")
+
+
+def profile_from_arguments(args):
+    """
+    Same choice as at field registration: wheat sown after 21 Nov runs
+    the wheat_late profile, PR 126 runs paddy_short, a ratoon runs
+    sugarcane_ratoon. --exact-profile keeps --crop as given.
+    """
+    if args.exact_profile or args.crop not in CROP_FAMILIES:
+        get_crop(args.crop)
+        return args.crop
+
+    return select_profile(args.crop, args.sow, variety=args.variety, ratoon=args.ratoon)

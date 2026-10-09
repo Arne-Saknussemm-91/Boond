@@ -27,7 +27,7 @@ import argparse
 import json
 from datetime import date
 
-from engine.data import is_paddy
+from engine.data import add_profile_arguments, is_paddy, profile_from_arguments
 from engine.field_runner import (
     apply_day,
     calculate_resources,
@@ -182,7 +182,7 @@ def simulate_season(
 
         if row["ks"] < 1.0:
             stress_days += 1
-            
+
         days.append({
             "date": daily["date"][today],
             "day": day,
@@ -217,18 +217,19 @@ def simulate_season(
     return {"summary": summary, "days": days}
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--weather", required=True)
     parser.add_argument("--sow", required=True, type=date.fromisoformat)
     parser.add_argument("--soil", default="loam")
-    parser.add_argument("--crop", default="wheat")
+    add_profile_arguments(parser)
     parser.add_argument("--forecast-days", type=int, default=16)
     parser.add_argument("--rain-probability", type=float, default=None,
                         help="trust forecast rain at this probability (default: not trusted)")
     parser.add_argument("--forecast", help="archived forecast file (historical-forecast)")
     parser.add_argument("--out")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    crop = profile_from_arguments(args)
 
     with open(args.weather, "r") as file:
         weather = json.load(file)
@@ -243,7 +244,7 @@ def main():
         weather,
         args.sow,
         args.soil,
-        crop=args.crop,
+        crop=crop,
         policy=boond_policy(args.rain_probability, args.forecast_days, forecast)
     )
 
@@ -252,6 +253,8 @@ def main():
     if args.out:
         with open(args.out, "w") as file:
             json.dump(result, file, indent=2)
+
+    return result
 
 
 if __name__ == "__main__":
