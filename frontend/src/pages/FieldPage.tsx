@@ -15,8 +15,8 @@ export default function FieldPage({ token }: { token: string }) {
   return (
     <div className="field-page">
       <TodaySection field={field} today={today} />
-      <OutlookSection today={today} outlook={outlook} />
-      <HistorySection history={history} />
+      {today && outlook.length > 0 && <OutlookSection today={today} outlook={outlook} />}
+      {history.length > 0 && <HistorySection history={history} />}
     </div>
   )
 }

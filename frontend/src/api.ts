@@ -13,8 +13,11 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export function fetchField(token: string): Promise<FieldResponse> {
-  // Mock mode has a single demo field, whatever the token.
-  if (!API_BASE) return getJson(`${import.meta.env.BASE_URL}mock/field-demo.json`)
+  // Mock mode: one file per demo state, e.g. #/f/demo, #/f/skip, #/f/heat, #/f/waiting.
+  if (!API_BASE) {
+    const safe = /^[a-z0-9-]+$/.test(token) ? token : 'demo'
+    return getJson(`${import.meta.env.BASE_URL}mock/field-${safe}.json`)
+  }
   return getJson(`${API_BASE}/field/${encodeURIComponent(token)}`)
 }
 

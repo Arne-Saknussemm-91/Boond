@@ -95,8 +95,8 @@ export interface SeasonTotals {
 
 export interface FieldResponse {
   field: FieldProfile
-  today: Today
-  outlook: OutlookDay[] // 16 days starting tomorrow
+  today: Today | null // null while status is WAITING (not sown yet)
+  outlook: OutlookDay[] // 16 days starting tomorrow (empty while WAITING)
   history: HistoryDay[] // newest first
 }
 
