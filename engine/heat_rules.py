@@ -22,6 +22,17 @@ def get_heat_windows_for_day(day_after_sowing, crop="wheat"):
     ]
 
 
+def consecutive_hot_days_required(crop="wheat"):
+    """
+    Hot forecast days in a row needed for HIGH heat risk: crops.json
+    heat_consecutive_days, else config heat.consecutive_days_required.
+    """
+    return get_crop(crop).get(
+        "heat_consecutive_days",
+        get_setting("heat", "consecutive_days_required")
+    )
+
+
 def get_heat_stage(day_after_sowing, crop="wheat"):
     windows = get_heat_windows_for_day(day_after_sowing, crop)
     return windows[0]["name"] if windows else None
@@ -96,18 +107,17 @@ def assess_heat_risk(
     values are used (config heat.forecast_window_days).
 
     Risk is HIGH when at least consecutive_days_required
-    consecutive days reach a threshold of a window they are in
-    (config heat.consecutive_days_required).
+    consecutive days reach a threshold of a window they are in:
+    the crop's own heat_consecutive_days if crops.json gives one
+    (cotton and sugarcane: 2), otherwise config
+    heat.consecutive_days_required.
     """
 
     if window_days is None:
         window_days = get_setting("heat", "forecast_window_days")
 
     if consecutive_days_required is None:
-        consecutive_days_required = get_setting(
-            "heat",
-            "consecutive_days_required"
-        )
+        consecutive_days_required = consecutive_hot_days_required(crop)
 
     tmax_window = list(forecast_tmax)[:window_days]
 

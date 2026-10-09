@@ -63,6 +63,9 @@ def _field(crop, soil, sowing_date, area_acres, lift_m, pump_efficiency):
         "crop": crop,
         "soil": soil,
         "sowing_date": (sowing or _NO_SOWING_DATE).isoformat(),
+        # Without a real date only crop-day rules apply (no sowing-window
+        # warning, no calendar last-irrigation date).
+        "sowing_date_known": sowing is not None,
         "area_acres": area_acres,
         "lift_m": lift_m,
         "pump_eff": pump_efficiency

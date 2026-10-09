@@ -23,12 +23,14 @@ from engine.simulate import boond_policy, simulate_season
 BASELINE_KEYS = {
     "wheat": "wheat",
     "wheat_late": "wheat",
+    "wheat_january": "wheat",
     "wheat_fao56": "wheat",
     "paddy": "paddy",
     "paddy_short": "paddy",
     "cotton": "cotton",
     "sugarcane": "sugarcane",
     "sugarcane_ratoon": "sugarcane",
+    "sugarcane_autumn": "sugarcane",
 }
 
 
@@ -123,11 +125,13 @@ def wheat_baseline(sow_date):
     return decide
 
 
-def interval_baseline(sow_date, crop_key):
+def interval_baseline(sow_date, crop_key, crop=None):
     """
     Cotton (CICR/PAU) and sugarcane (PAU/TNAU): first irrigation on
     a fixed day, then a fixed interval. A day with at least
-    rain_reset_mm of rain restarts the interval.
+    rain_reset_mm of rain restarts the interval. Irrigation stops
+    after last_irrigation_date, or stop_days_before_harvest before
+    the end of the `crop` profile's season.
     """
     plan = load_json("baseline.json")[crop_key]
 
@@ -136,6 +140,13 @@ def interval_baseline(sow_date, crop_key):
         if "last_irrigation_date" in plan
         else date.max
     )
+
+    if "stop_days_before_harvest" in plan:
+        season = get_crop(crop or crop_key)["total_days"]
+        last_date = min(
+            last_date,
+            sow_date + timedelta(days=season - plan["stop_days_before_harvest"] - 1)
+        )
 
     def interval(on_date):
         if "interval_days" in plan:
@@ -201,7 +212,7 @@ def baseline_policy(crop, sow_date):
     if key == "paddy":
         return paddy_baseline(crop)
 
-    return interval_baseline(sow_date, key)
+    return interval_baseline(sow_date, key, crop)
 
 
 def replay(weather, crop, sow_date, soil, rain_probability=None, forecast=None):

@@ -15,8 +15,9 @@ import json
 import sys
 from datetime import date
 
-from engine.data import entries, load_config, load_json
+from engine.data import CROP_FAMILIES, entries, load_config, load_json, select_profile
 from engine.kc import STAGES, get_kc, get_season_length
+from engine.season_rules import WINDOW_KEYS, month_day
 
 
 PADDY_WATER_KEYS = (
@@ -28,7 +29,77 @@ PADDY_WATER_KEYS = (
 )
 
 
-def check_crops(crops):
+def _bad_month_day(value):
+    try:
+        month_day(value)
+    except (AttributeError, TypeError, ValueError):
+        return True
+
+    return False
+
+
+def check_calendar_rules(name, crop, season_length, heat_window_days):
+    """Sowing windows, stop_irrigation and heat_consecutive_days."""
+    problems = []
+    windows = [key for key, _ in WINDOW_KEYS if crop.get(key)]
+
+    if len(windows) > 1:
+        problems.append(f"crops.{name}: give only one of {', '.join(windows)}")
+
+    for key in windows:
+        for end in ("start", "end"):
+            if _bad_month_day(crop[key].get(end)):
+                problems.append(f"crops.{name}: {key}.{end} must be a real MM-DD date")
+
+    stop = crop.get("stop_irrigation")
+
+    if stop is not None:
+        if not {"last_irrigation_date", "days_before_harvest"} & set(stop):
+            problems.append(f"crops.{name}: stop_irrigation needs last_irrigation_date or days_before_harvest")
+
+        if "last_irrigation_date" in stop and _bad_month_day(stop["last_irrigation_date"]):
+            problems.append(f"crops.{name}: stop_irrigation.last_irrigation_date must be MM-DD")
+
+        later = stop.get("if_sown_after")
+
+        if later is not None and (
+            _bad_month_day(later.get("date")) or _bad_month_day(later.get("last_irrigation_date"))
+        ):
+            problems.append(f"crops.{name}: stop_irrigation.if_sown_after needs MM-DD date and last_irrigation_date")
+
+        days = stop.get("days_before_harvest")
+
+        if days is not None and not (isinstance(days, int) and 0 < days < season_length):
+            problems.append(f"crops.{name}: stop_irrigation.days_before_harvest must be within the season")
+
+    consecutive = crop.get("heat_consecutive_days")
+
+    if consecutive is not None and not (isinstance(consecutive, int) and 1 <= consecutive <= heat_window_days):
+        problems.append(
+            f"crops.{name}: heat_consecutive_days must be 1..heat.forecast_window_days ({heat_window_days})"
+        )
+
+    return problems
+
+
+def check_profile_selection(crops):
+    """Every sowing date of the year picks an existing profile."""
+    problems = []
+    names = set(entries(crops))
+
+    for family in CROP_FAMILIES:
+        for month in range(1, 13):
+            for day in (1, 15, 28):
+                for ratoon in (False, True):
+                    profile = select_profile(family, date(2021, month, day), ratoon=ratoon)
+
+                    if profile not in names:
+                        problems.append(f"select_profile({family}, {month:02d}-{day:02d}) -> unknown {profile}")
+
+    return sorted(set(problems))
+
+
+def check_crops(crops, heat_window_days=3):
     problems = []
 
     for name, crop in entries(crops).items():
@@ -93,6 +164,8 @@ def check_crops(crops):
 
         if set(irrigation.get("checkin_depth_mm", {})) != {"light", "normal", "heavy"}:
             problems.append(f"crops.{name}: irrigation.checkin_depth_mm needs light/normal/heavy")
+
+        problems += check_calendar_rules(name, crop, season_length, heat_window_days)
 
         if crop.get("crop_family") == "paddy":
             water = crop.get("paddy_water", {})
@@ -170,6 +243,8 @@ def check_config(config):
 
 
 def check_baseline(baseline, crops):
+    from engine.replay import BASELINE_KEYS
+
     problems = []
 
     for name in ("wheat", "paddy", "cotton", "sugarcane"):
@@ -178,14 +253,20 @@ def check_baseline(baseline, crops):
         elif name not in crops:
             problems.append(f"baseline: {name} is not a crop in crops.json")
 
+    for name in entries(crops):
+        if BASELINE_KEYS.get(name) not in baseline:
+            problems.append(f"replay.BASELINE_KEYS: no baseline schedule for profile {name}")
+
     return problems
 
 
 def validate():
     crops = load_json("crops.json")
+    config = load_config()
 
     return (
-        check_crops(crops)
+        check_crops(crops, config["heat"]["forecast_window_days"])
+        + check_profile_selection(crops)
         + check_soils(load_json("soils.json"))
         + check_config(load_config())
         + check_baseline(load_json("baseline.json"), crops)

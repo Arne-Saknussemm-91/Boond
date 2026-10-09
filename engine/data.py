@@ -101,12 +101,12 @@ def select_profile(crop, sowing_date, variety=None, ratoon=False):
         sowing_date = date.fromisoformat(sowing_date)
 
     if crop == "wheat":
+        # January-June: very late sowing (PAU: PBW 757, ~114 days).
+        if sowing_date.month < 7:
+            return "wheat_january"
+
         # PAU timely-sown window ends 21 Nov (Rabi 2025-26, p.17).
         timely = (sowing_date.month, sowing_date.day) <= (11, 21)
-
-        # Sowings in Jan-Mar belong to the late window too.
-        if sowing_date.month < 7:
-            timely = False
 
         return "wheat" if timely else "wheat_late"
 
@@ -114,7 +114,12 @@ def select_profile(crop, sowing_date, variety=None, ratoon=False):
         return "paddy_short" if variety and variety.upper().replace(" ", "") == "PR126" else "paddy"
 
     if crop == "sugarcane":
-        return "sugarcane_ratoon" if ratoon else "sugarcane"
+        if ratoon:
+            return "sugarcane_ratoon"
+
+        # AICRP (ICAR-IISR 2017): North-West India plants autumn cane in
+        # September-October and spring cane in February-March.
+        return "sugarcane_autumn" if 8 <= sowing_date.month <= 12 else "sugarcane"
 
     get_crop(crop)
     return crop
@@ -136,8 +141,10 @@ def add_profile_arguments(parser):
 def profile_from_arguments(args):
     """
     Same choice as at field registration: wheat sown after 21 Nov runs
-    the wheat_late profile, PR 126 runs paddy_short, a ratoon runs
-    sugarcane_ratoon. --exact-profile keeps --crop as given.
+    the wheat_late profile and wheat sown in January wheat_january,
+    PR 126 runs paddy_short, cane planted from August to December
+    sugarcane_autumn and a ratoon sugarcane_ratoon. --exact-profile
+    keeps --crop as given.
     """
     if args.exact_profile or args.crop not in CROP_FAMILIES:
         get_crop(args.crop)

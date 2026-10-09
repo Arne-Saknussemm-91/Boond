@@ -69,6 +69,8 @@
     "depth_mm": 75,
     "rain_reset_mm": 25,
     "first_irrigation_day": 20,
-    "_first_note": "TNAU: first irrigation when 20-25% of setts have germinated, or ~20 days after planting."
+    "_first_note": "TNAU: first irrigation when 20-25% of setts have germinated, or ~20 days after planting.",
+    "stop_days_before_harvest": 30,
+    "_stop_note": "Same drying-off period as Boond (crops.json stop_irrigation): no irrigation in the last 30 days before harvest, so both runs stop on the same day."
   }
 }

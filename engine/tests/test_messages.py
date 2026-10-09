@@ -18,10 +18,10 @@ def reason_codes_in(source_file):
 
 
 def test_every_reason_code_has_english_and_hindi_text():
-    codes = reason_codes_in("advisor.py") | reason_codes_in("paddy.py")
+    codes = reason_codes_in("advisor.py") | reason_codes_in("paddy.py") | reason_codes_in("field_runner.py")
     reasons = load_json("messages.json")["reasons"]
 
-    assert {"HEAT_RISK_SOIL_MOIST", "HEAT_RISK_RAIN_EXPECTED"} <= codes
+    assert {"HEAT_RISK_SOIL_MOIST", "HEAT_RISK_RAIN_EXPECTED", "IRRIGATION_STOPPED", "NOT_SOWN_YET"} <= codes
     assert codes - set(reasons) == set()
 
     for code, text in reasons.items():

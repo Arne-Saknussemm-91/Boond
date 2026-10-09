@@ -36,6 +36,7 @@ from engine.field_runner import (
     starting_depletion
 )
 from engine.kc import get_season_length
+from engine.season_rules import last_irrigation
 
 
 __all__ = ["boond_policy", "simulate_season", "starting_depletion"]
@@ -143,11 +144,14 @@ def simulate_season(
         "pump_eff": pump_efficiency
     }
     state = start_state(field, et0=daily["et0_mm"][first])
+    stop = last_irrigation(crop, sow_date)
+    last_irrigation_day = stop["day_after_sowing"] if stop else season_length
 
     days = []
     seasonal_etc = 0.0
 
     stress_days = 0
+    drying_off_stress_days = 0
 
     for day in range(1, season_length + 1):
         today = first + day - 1
@@ -183,6 +187,9 @@ def simulate_season(
         if row["ks"] < 1.0:
             stress_days += 1
 
+            if day > last_irrigation_day:
+                drying_off_stress_days += 1
+
         days.append({
             "date": daily["date"][today],
             "day": day,
@@ -209,6 +216,8 @@ def simulate_season(
         "pump_kwh": round(resources["kwh"], 1),
         "co2_kg": round(resources["co2_kg"], 1),
         "stress_days": stress_days,
+        "drying_off_stress_days": drying_off_stress_days,
+        "last_irrigation_date": stop["date"] if stop else None,
         "seasonal_etc_mm": round(seasonal_etc, 1),
         "rain_mm": round(sum(row["rain_mm"] for row in days), 1),
         "drainage_mm": round(sum(row["losses_mm"] for row in days), 1)

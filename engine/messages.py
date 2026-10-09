@@ -6,9 +6,12 @@ Turn an engine decision into the farmer-facing sentence.
 
 Depths are shown in whole millimetres (farmers cannot apply 0.3 mm),
 and every message ends with the decision-support footer (spec 11).
+Warnings that come with the advice (a sowing date outside the
+recommended window) are rendered separately with render_warnings.
 """
 
 import re
+from datetime import date
 
 from engine.data import load_json
 
@@ -74,6 +77,38 @@ def render(result, lang="hi", footer=True):
     return text
 
 
+def _day_month(value, lang, messages):
+    day = date.fromisoformat(value)
+    return f"{day.day} {messages['months'][lang][day.month - 1]}"
+
+
+def render_warning(warning, lang="hi"):
+    """One entry of result["warnings"] as a sentence."""
+    if lang not in LANGUAGES:
+        raise ValueError(f"Unknown language: {lang}")
+
+    messages = load_json("messages.json")
+
+    if warning["code"] not in messages["warnings"]:
+        raise ValueError(f"No message for warning: {warning['code']}")
+
+    window = (
+        f"{_day_month(warning['window_start'], lang, messages)} – "
+        f"{_day_month(warning['window_end'], lang, messages)}"
+    )
+
+    return messages["warnings"][warning["code"]][lang].format(
+        kind=messages["kinds"][warning["kind"]][lang],
+        days_outside=warning["days_outside"],
+        window=window
+    )
+
+
+def render_warnings(result, lang="hi"):
+    """All warnings of an advice, as sentences (an empty list if none)."""
+    return [render_warning(warning, lang) for warning in result.get("warnings") or []]
+
+
 def allowed_numbers(result):
     """
     Every number a correct message may contain: the values in the
@@ -90,6 +125,10 @@ def allowed_numbers(result):
             allowed.add(value)
         elif isinstance(value, (int, float)) and not isinstance(value, bool):
             allowed.add(str(value))
+
+    for lang in LANGUAGES:
+        for text in render_warnings(result, lang):
+            allowed |= numbers_in(text)
 
     return allowed
 

@@ -9,7 +9,9 @@ the code that runs in production.
 
 field     {"crop": crops.json profile key (data.select_profile),
            "soil": soils.json key, "sowing_date": "YYYY-MM-DD",
-           "area_acres": float, "lift_m": float, "pump_eff": float or None}
+           "area_acres": float, "lift_m": float, "pump_eff": float or None,
+           "sowing_date_known": optional, default True; False only in the
+           one-day wrappers that have no real date (calendar rules off)}
 state     JSON-serialisable dict, stored with the field (DynamoDB STATE item)
 observed  daily weather, same layout as the cache files:
           {"date": [...], "et0_mm": [...], "rain_mm": [...], "tmax_c": [...]}
@@ -33,6 +35,7 @@ from engine.data import get_crop, get_setting, is_paddy, max_advised_depth
 from engine.heat_rules import assess_heat_risk
 from engine.kc import get_kc, get_season_length, get_stage
 from engine.paddy import decide_paddy, initial_paddy_state, update_paddy_day
+from engine.season_rules import check_sowing_window, last_irrigation
 from engine.resources import (
     co2_emissions,
     electricity_cost,
@@ -291,6 +294,38 @@ def apply_day(field, state, on_date, et0, rain, irrigation=0.0):
 # Decision
 # ---------------------------------------------------------------------------
 
+def sowing_warnings(field):
+    """
+    Warnings shown with every advice for this field: today only the
+    sowing date outside the crop's recommended window
+    (season_rules.check_sowing_window). Empty when the real sowing
+    date is not known.
+    """
+    if not field.get("sowing_date_known", True):
+        return []
+
+    check = check_sowing_window(field["crop"], field["sowing_date"])
+
+    if check is None or check["warning"] is None:
+        return []
+
+    return [{
+        "code": check["warning"],
+        "kind": check["kind"],
+        "days_outside": check["days_outside"],
+        "window_start": check["window_start"],
+        "window_end": check["window_end"]
+    }]
+
+
+def _last_irrigation(field):
+    return last_irrigation(
+        field["crop"],
+        field["sowing_date"],
+        calendar_dates=field.get("sowing_date_known", True)
+    )
+
+
 def _status_advice(field, day, status, reason_code):
     return {
         "status": status,
@@ -300,6 +335,7 @@ def _status_advice(field, day, status, reason_code):
         "depth_mm": 0.0,
         "reason_code": reason_code,
         "sowing_date": _as_date(field["sowing_date"]).isoformat(),
+        "warnings": sowing_warnings(field),
         "outlook": [],
         **calculate_resources(0.0, field.get("area_acres", 1.0), field.get("lift_m", 30.0),
                               field.get("pump_eff"))
@@ -324,6 +360,12 @@ def decide_today(
     last crop day). If the forecast is missing, the engine still
     irrigates a field that is already past RAW or due a critical
     irrigation, and otherwise returns NO_FORECAST_DATA.
+
+    After the crop's last irrigation day (season_rules.last_irrigation:
+    PAU wheat 31 March / 10 April, cotton 30 September, sugarcane 30
+    days before harvest, paddy stop_irrigation_day) the advice is WAIT
+    with IRRIGATION_STOPPED, heat irrigation included. A sowing date
+    outside the recommended window adds an entry to "warnings".
     """
     crop = field["crop"]
 
@@ -342,6 +384,8 @@ def decide_today(
     dates, future_et0, future_rain, future_tmax, probability = _forecast_lists(forecast, today)
     heat_result = assess_heat_risk(day, future_tmax, crop)
     skip_days = get_setting("advisor", "rain_skip_window_days")
+    stop = _last_irrigation(field)
+    stopped = stop is not None and day > stop["day_after_sowing"]
 
     if maximum_depth is None:
         maximum_depth = max_advised_depth(crop)
@@ -357,7 +401,12 @@ def decide_today(
         "max_forecast_tmax_c": heat_result["max_forecast_tmax_c"],
         "rain_probability": probability,
         "rain_next_3d_mm": round(sum(future_rain[:skip_days]), 2),
-        "forecast_days": len(future_et0)
+        "forecast_days": len(future_et0),
+        "last_irrigation_date": (
+            stop["date"] if stop and field.get("sowing_date_known", True) else None
+        ),
+        "last_irrigation_day": stop["day_after_sowing"] if stop else None,
+        "warnings": sowing_warnings(field)
     }
 
     if is_paddy(crop):
@@ -415,6 +464,18 @@ def decide_today(
             forecast_balances=forecast_balances or None,
             critical=critical
         )
+
+        if stopped:
+            # The crop is drying off before harvest (PAU / CICR / sugarcane
+            # ripening). The balance is still reported, but no irrigation,
+            # heat protection included, is advised.
+            decision = {
+                "action": "WAIT",
+                "depth_mm": 0.0,
+                "reason_code": "IRRIGATION_STOPPED",
+                "crossing_day": None
+            }
+            critical = None
 
         advice.update({
             "depletion_mm": round(depletion, 2),

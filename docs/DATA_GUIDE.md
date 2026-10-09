@@ -17,7 +17,7 @@ If you later add a learned component (beyond this hackathon), the targets in `va
 
 | File | Replaces | What's new |
 |---|---|---|
-| `engine/crops.json` | your crops.json | 8 crop profiles, Punjab stage lengths, heat windows with day ranges, root-growth day, per-crop irrigation depths, paddy pond rules, seasonal sanity targets |
+| `engine/crops.json` | your crops.json | 10 crop profiles (including very late wheat and autumn sugarcane), sowing windows and last-irrigation rules for every crop, Punjab stage lengths, heat windows with day ranges, root-growth day, per-crop irrigation depths, paddy pond rules, seasonal sanity targets |
 | `engine/soils.json` | your soils.json | Same 3 farmer soils with unchanged values, plus REW/TEW, paddy percolation, Hindi labels, 5 extra texture classes, a SoilGrids suggestion rule |
 | `engine/config.json` | your config.json | Same keys, cited or justified values, plus check-in rain values, CEA 2025-26 emission factor, Kc climate adjustment switch |
 | `engine/baseline.json` | new | PAU/CICR/TNAU calendar schedules for all 4 crops, including PAU's rain-delay rule for wheat |
@@ -46,19 +46,34 @@ The heat windows are also day-based now. At PAU, wheat headed at 96-99 days afte
 
 ### 4.1 Pick the profile when a field is registered
 
-```python
-def crop_profile(crop, sowing_date):
-    if crop == "wheat":
-        # PAU timely window ends 21 Nov (Rabi 2025-26, p.17)
-        return "wheat" if (sowing_date.month, sowing_date.day) <= (11, 21) else "wheat_late"
-    if crop == "paddy":
-        return "paddy"            # or "paddy_short" if the farmer picks PR 126
-    if crop == "sugarcane":
-        return "sugarcane"        # "sugarcane_ratoon" if it is a ratoon crop
-    return crop                   # "cotton"
-```
+Use `engine.data.select_profile(crop, sowing_date, variety=None, ratoon=False)`:
+
+| Crop | Date given | Profile | Source of the split |
+|---|---|---|---|
+| Wheat | up to 21 Nov | `wheat` | PAU timely window ends 21 Nov (Rabi 2025-26, p.17) |
+| Wheat | 22 Nov – 31 Dec | `wheat_late` | PAU late window 22 Nov – 20 Dec; later December sowings get a warning |
+| Wheat | 1 Jan – 30 Jun | `wheat_january` | PAU recommends PBW 757 (about 114 days) for January sowing |
+| Paddy | transplanting | `paddy`, `paddy_short` for PR 126 | |
+| Sugarcane | Jan – Jul | `sugarcane` (spring) | AICRP / ICAR-IISR 2017: North-West zone plants spring cane in Feb–Mar |
+| Sugarcane | Aug – Dec | `sugarcane_autumn` | Same bulletin: autumn cane in Sep–Oct |
+| Sugarcane | ratoon | `sugarcane_ratoon` | |
+| Cotton | sowing | `cotton` | |
 
 Store the profile key on the PROFILE item so later edits to crops.json don't silently change running fields.
+
+**Sowing window.** Every profile except `wheat_fao56` and `sugarcane_ratoon` has a recommended window (`sowing_window`, `transplant_window` or `planting_window`, as MM-DD). `engine.season_rules.check_sowing_window` compares the farmer's date with it. Outside the window, the advice carries a `SOWN_AFTER_WINDOW` or `SOWN_BEFORE_WINDOW` warning with the number of days. The warning tells the farmer that yield may be lower; it does not change the irrigation advice, because the crop's water need is the same.
+
+**Last irrigation before harvest.** Irrigating a ripening crop wastes water and can harm it, so each profile says when Boond stops advising irrigation (`engine.season_rules.last_irrigation`):
+
+| Profile | Last irrigation | Source |
+|---|---|---|
+| `wheat`, `wheat_late` | 31 March; 10 April if sown after 5 December | PAU Rabi 2025-26 p.17 |
+| `wheat_january` | 10 April | PAU Rabi 2025-26 p.17 |
+| `cotton` | 30 September | CICR/PAU Package of Practices for Cotton, Punjab: "to hasten boll opening" |
+| `sugarcane`, `sugarcane_autumn`, `sugarcane_ratoon` | 30 days before harvest | Abazied & El-Laboudy 2021 (30 days gave the best sugar recovery); FAO: irrigation is stopped to ripen the cane. ASSUMPTION for Punjab |
+| `paddy`, `paddy_short` | `paddy_water.stop_irrigation_day` | PAU Kharif 2026 p.12 |
+
+After that day the advice is WAIT with `IRRIGATION_STOPPED`, even in a heat wave. The replay counts stress days after the last irrigation date separately (`drying_off_stress_days`), in both runs, because they are intended.
 
 **Date label in the form:** for wheat and cotton, ask for the sowing date. For paddy, ask for the transplanting date (day 1 is transplanting, and the nursery is not modelled). For sugarcane, ask for the planting date, or the last harvest date for a ratoon crop.
 
@@ -91,7 +106,7 @@ for w in crop["heat_windows"]:
         raise_heat_warning(w["name"])
 ```
 
-Check each forecast day within `config.heat.forecast_window_days`, using that forecast day's crop day, not today's. In May-June, cotton (35 °C) and sugarcane (40 °C) cross their thresholds almost daily in Punjab. Set `config.heat.consecutive_days_required = 2` for them, or the HEAT PROTECTION advice will fire every day and farmers will learn to ignore it.
+Check each forecast day within `config.heat.forecast_window_days`, using that forecast day's crop day, not today's. In May-June, cotton (35 °C) and sugarcane (40 °C) cross their thresholds almost daily in Punjab, so these profiles set `heat_consecutive_days: 2`: HEAT PROTECTION needs two hot days in a row within the 3-day window, the same persistence IMD requires before declaring a heat wave. Other crops use `config.heat.consecutive_days_required` (1). In the 2021-22 replay this cut the heat-reason days from 27 to 20 for cotton and from 19 to 10 for sugarcane.
 
 ### 4.4 Irrigation depth
 
@@ -168,7 +183,7 @@ Today is early October. In Punjab:
 | Crop | Live fields possible? |
 |---|---|
 | Wheat | Yes. Sowing runs from late October to November |
-| Autumn- or spring-planted sugarcane, and ratoons | Yes |
+| Autumn- or spring-planted sugarcane, and ratoons | Yes (autumn planting runs Sep–Oct: `sugarcane_autumn`) |
 | Paddy | No. Transplanted June-July, now at harvest |
 | Cotton | No. Sown April-May, last irrigation by 30 September |
 
@@ -201,7 +216,12 @@ Put this table in the README.
 | A19 | Root zone full at sowing; if no pre-sowing irrigation, start at D = RAW | config.root_zone | Spec 6.4; PAU recommends rauni | Onboarding answer |
 | A20 | Baseline mid-points (5.5 weeks, 17 days, 10 days…) and rain-reset 25 mm | baseline.json | PAU/CICR give ranges, not single values | — |
 | A21 | Black Vertisol FC/WP 0.40/0.22 | soils.black_vertisol | Top of FAO clay range | District soil survey data |
-| A22 | Sugarcane spring planting 15 Feb-31 Mar | crops.sugarcane | Not read from PAU (PDF text cut off before that chapter) | Confirm from PAU Kharif pp. 76-95 |
+| A22 | Sugarcane spring planting 15 Feb-31 Mar | crops.sugarcane | AICRP / ICAR-IISR 2017: Feb–Mar in the North-West zone; the 15 Feb start is a judgement | Confirm from PAU Kharif pp. 76-95 |
+| A23 | `wheat_january` stages 26/36/27/25 = 114 d and heat windows 82-95 / 90-110 | crops.wheat_january | PBW 757 matures in ~114 d; PAU 2 Dec stage split (Kaur et al. 2017) scaled | A measured stage split for January sowing |
+| A24 | `sugarcane_autumn` 420 d, stages 45/210/120/45, heat window days 180-270, roots full at day 255 | crops.sugarcane_autumn | AICRP autumn planting Sep–Oct, harvest the next winter; calendar mapped for 1 Oct planting | A PAU or IISR crop calendar for autumn cane |
+| A25 | Sugarcane drying-off 30 days before harvest | crops.sugar*.stop_irrigation, baseline.json | Abazied & El-Laboudy 2021 (Egypt); FAO ripening note | PAU's sugarcane chapter gives a different period |
+| A26 | Cotton and sugarcane heat protection needs 2 consecutive hot days | crops.*.heat_consecutive_days | IMD heat-wave persistence; avoids daily alerts | Field feedback on alert fatigue |
+| A27 | Wheat sown 21–31 Dec runs `wheat_late` (with a late-sowing warning) | data.select_profile | PAU's late window ends 20 Dec and PBW 757 is for January | — |
 
 ## 6. Not verified
 
@@ -240,6 +260,12 @@ Put this table in the README.
 
 - TNAU Agritech: [sugarcane irrigation](https://agritech.tnau.ac.in/agriculture/agri_irrigationmgt_sugarcane.html), [sugarcane expert system](https://agritech.tnau.ac.in/expert_system/sugar/irrigationmanagement.html), [rice water management](https://agritech.tnau.ac.in/expert_system/paddy/cultivationpractices3.html), [puddled rice](https://agritech.tnau.ac.in/agriculture/agri_irrigationmgt_rice_transplantedpuddled.html)
 - [MPKV Rahuri sugarcane recommendations](https://mpkv.ac.in/Uploads/Research/9.%20Sugarcane_20200110053812.pdf)
+
+**Sowing windows, very late wheat, sugarcane ripening**
+
+- AICRP on Sugarcane, Technical Bulletin No. 1 (ICAR-IISR Lucknow, 2017): North-West zone planting seasons (spring Feb–Mar, autumn Sep–Oct)
+- [Varieties for late-sown irrigated wheat in Punjab](https://www.global-agriculture.com/seed-industry/varieties-suitable-for-late-sown-wheat-with-irrigated-conditions-in-punjab/) (PBW 757: about 114 days, January sowing); [Tribune: PAU guidelines for wheat sowing in January](https://www.tribuneindia.com/news/ludhiana/pau-issues-guidelines-for-wheat-sowing-in-january-to-ensure-optimal-yields/amp)
+- Abazied & El-Laboudy (2021), [Effect of drying-off period on yield and quality of sugarcane](https://ejas.journals.ekb.eg/article_152335.html), *Egyptian J. Applied Sciences* 36(1):1-15
 
 **Heat physiology**
 

@@ -91,6 +91,38 @@
     "IRRIGATION_STOPPED": {
       "en": "Stop irrigating: the crop is close to maturity.",
       "hi": "सिंचाई बंद करें: फसल पकने के करीब है।"
+    },
+    "NOT_SOWN_YET": {
+      "en": "The crop is not sown yet. Advice starts on the sowing or transplanting date.",
+      "hi": "फसल अभी बोई नहीं गई है। सलाह बुवाई या रोपाई की तारीख से शुरू होगी।"
+    },
+    "SEASON_OVER": {
+      "en": "The season for this crop is over. Register the next crop to get advice again.",
+      "hi": "इस फसल का मौसम पूरा हो गया है। फिर से सलाह पाने के लिए अगली फसल दर्ज करें।"
     }
-  }
+  },
+
+  "kinds": {
+    "sowing":        { "en": "sowing",        "hi": "बुवाई" },
+    "transplanting": { "en": "transplanting", "hi": "रोपाई" },
+    "planting":      { "en": "planting",      "hi": "बुवाई" }
+  },
+  "_kinds_note": "Sugarcane planting is called बुवाई in Hindi (गन्ने की बुवाई). Both Hindi words are feminine, so the warning templates use हुई.",
+
+  "months": {
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "hi": ["जनवरी", "फ़रवरी", "मार्च", "अप्रैल", "मई", "जून", "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर"]
+  },
+
+  "warnings": {
+    "SOWN_AFTER_WINDOW": {
+      "en": "Note: {kind} was {days_outside} days after the recommended window ({window}). Yield may be lower; the irrigation advice still follows the crop's water need.",
+      "hi": "ध्यान दें: {kind} अनुशंसित समय ({window}) से {days_outside} दिन बाद हुई। पैदावार कम हो सकती है; सिंचाई की सलाह फिर भी फसल की पानी की ज़रूरत के अनुसार दी जाएगी।"
+    },
+    "SOWN_BEFORE_WINDOW": {
+      "en": "Note: {kind} was {days_outside} days before the recommended window ({window}). Yield may be lower; the irrigation advice still follows the crop's water need.",
+      "hi": "ध्यान दें: {kind} अनुशंसित समय ({window}) से {days_outside} दिन पहले हुई। पैदावार कम हो सकती है; सिंचाई की सलाह फिर भी फसल की पानी की ज़रूरत के अनुसार दी जाएगी।"
+    }
+  },
+  "_warnings_note": "Shown with the advice when the sowing / transplanting / planting date is outside the crop's window in crops.json (engine.season_rules.check_sowing_window). Render with engine.messages.render_warnings(result, lang)."
 }
