@@ -55,13 +55,23 @@ button {
   border-radius: var(--radius-sm);
 }
 
+/* Works for tables too: a hidden <table> ignores width:1px, so pin and clip it. */
 .visually-hidden {
   position: absolute !important;
-  width: 1px;
-  height: 1px;
+  left: 0;
+  top: 0;
+  width: 1px !important;
+  height: 1px !important;
+  max-width: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
+}
+
+html,
+body {
+  overflow-x: clip;
 }
 
 @media (prefers-reduced-motion: reduce) {
